@@ -85,23 +85,29 @@ function inWindow(at: string, asOfMs: number, lowerMs: number): boolean {
 }
 
 /**
- * accuracyRate (§2): successes / resolved-with-a-correctness-signal.
+ * accuracyRate (§2): readiness = SOLO-quality, so an OVERRIDDEN decision counts as a
+ * FAILURE (the agent's own call was wrong; a human had to correct it).
  *
- * Chosen interpretations (flagged — doc leaves these unspecified):
- *   - PARTIAL outcome → 0.5 credit.
- *   - denominator = resolved decisions carrying a correctness signal (an OUTCOME,
- *     or a verdict of ACCEPTED/FAILED). OVERRIDDEN/ESCALATED WITHOUT an outcome are
- *     excluded (measured by their own rates — including them double-penalizes).
- *   - OUTCOME wins over verdict when both are present (it is ground truth).
+ *   - OVERRIDDEN → 0 credit, INCLUDED in the denominator, REGARDLESS of outcome (a
+ *     rescued outcome does not redeem a call that would have shipped wrong in Solo).
+ *   - ESCALATED → EXCLUDED from accuracy (knowing your limits ≠ being wrong).
+ *   - Otherwise OUTCOME wins when present: SUCCESS → 1, PARTIAL → 0.5, FAILURE → 0.
+ *   - With no outcome: ACCEPTED → 1, FAILED → 0.
  *
- * Computation is UNCHANGED from Phase 2. Note the separate WITHHOLD gate below
- * treats accuracy as "absent" only when there is no OUTCOME-bearing resolved
- * decision; this function may still produce a number from ACCEPTED/FAILED verdicts.
+ * (The override ALSO bites the separate (1−override) supervision-burden term — an override
+ * is two distinct costs: a wrong call and a human rescue. Weights/thresholds unchanged.)
  */
 function deriveAccuracy(resolved: readonly Decision[]): number {
   let credit = 0;
   let denom = 0;
   for (const d of resolved) {
+    if (d.verdict.kind === 'OVERRIDDEN') {
+      denom += 1; // counts as a failure (credit += 0) regardless of outcome
+      continue;
+    }
+    if (d.verdict.kind === 'ESCALATED') {
+      continue; // excluded — escalation is its own rate
+    }
     if (d.outcome !== undefined) {
       denom += 1;
       if (d.outcome === 'SUCCESS') credit += 1;

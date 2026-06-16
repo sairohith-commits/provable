@@ -40,9 +40,11 @@ describe('computeReadiness — pinned score (rates over the resolved set)', () =
   it('produces the exact re-pinned score; escalation uses |R|, not total-in-window', () => {
     // Resolved R (15): 4 ACCEPTED+SUCCESS, 4 FAILED, 4 OVERRIDDEN, 3 ESCALATED — all conf 0.8.
     // Plus 5 PENDING (conf 0.1, no outcome) that must be excluded from EVERY rate.
-    //   accuracy = 4/8 = 0.5 ; confidence = 0.8 ; override = 4/8 = 0.5
-    //   escalation = 3/|R| = 3/15 = 0.2   (over total-20 it would be 0.15)
-    //   score = (0.5*0.40 + 0.8*0.25 + 0.5*0.20 + 0.8*0.15)*100 = 62
+    //   accuracy denom = ACCEPTED(4)+FAILED(4)+OVERRIDDEN(4)=12 (ESCALATED excluded);
+    //   credit = 4 (only the ACCEPTED+SUCCESS) → accuracy = 4/12 = 0.3333
+    //     (OVERRIDDEN now counts as a failure, 0 — readiness = solo-quality)
+    //   confidence = 0.8 ; override = 4/8 = 0.5 ; escalation = 3/15 = 0.2
+    //   score = (0.3333*0.40 + 0.8*0.25 + 0.5*0.20 + 0.8*0.15)*100 = 55.33
     const decisions: Decision[] = [
       ...range(4, () => mkDec({ verdict: { kind: 'ACCEPTED' }, outcome: 'SUCCESS', confidence: 0.8 })),
       ...range(4, () => mkDec({ verdict: { kind: 'FAILED' }, confidence: 0.8 })),
@@ -55,14 +57,29 @@ describe('computeReadiness — pinned score (rates over the resolved set)', () =
     expect(r.status).toBe('SCORED');
     if (r.status !== 'SCORED') return;
 
-    expect(r.readinessScore).toBeCloseTo(62, 9);
+    expect(r.readinessScore).toBeCloseTo(55.3333, 3);
     expect(r.impliedBand).toBe('CO_PILOT');
     expect(r.eventCount).toBe(20);
     expect(r.resolvedCount).toBe(15);
-    expect(r.components.accuracyRate).toBeCloseTo(0.5, 9);
+    expect(r.components.accuracyRate).toBeCloseTo(1 / 3, 9); // 4/12 — OVERRIDDEN counts as 0
     expect(r.components.confidenceAvg).toBeCloseTo(0.8, 9); // PENDING conf 0.1 excluded
     expect(r.components.overrideRate).toBeCloseTo(0.5, 9);
     expect(r.components.escalationRate).toBeCloseTo(0.2, 9); // 3/15, NOT 3/20
+  });
+
+  it('ADVERSARIAL: rescued OVERRIDDEN no longer inflates readiness', () => {
+    // A window of OVERRIDDEN decisions whose outcomes were SUCCESS (a human caught each).
+    // OLD mapping (outcome wins): accuracy 1.0, override 1.0 → score ≈ 77.5 (SOLO).
+    // NEW mapping (override = failure): accuracy 0.0 → score ≈ 37.5 (SHADOW).
+    const decisions = range(10, () =>
+      mkDec({ verdict: { kind: 'OVERRIDDEN' }, outcome: 'SUCCESS', confidence: 0.9 }),
+    );
+    const r = computeReadiness(decisions, ASOF);
+    expect(r.status).toBe('SCORED');
+    if (r.status !== 'SCORED') return;
+    expect(r.components.accuracyRate).toBe(0); // every call was overridden → all wrong
+    expect(r.readinessScore).toBeLessThan(40); // SHADOW, not the old ~77.5 SOLO
+    expect(r.impliedBand).toBe('SHADOW');
   });
 });
 

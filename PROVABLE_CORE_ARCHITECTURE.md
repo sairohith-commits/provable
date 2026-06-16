@@ -123,7 +123,7 @@ window = rolling 30 days, per (agentKey × taskKey)
 
 Canonical derivation (the **only** place primitives become formula inputs):
 
-- `accuracyRate`  = successes / resolved, where success = `OUTCOME=SUCCESS` OR (`ACCEPTED` with no failing outcome); `FAILED` and `OUTCOME=FAILURE` count against.
+- `accuracyRate`  = successes / resolved, where success = `OUTCOME=SUCCESS` OR (`ACCEPTED` with no failing outcome); `FAILED` and `OUTCOME=FAILURE` count against. **`OVERRIDDEN` counts as a failure (0) regardless of outcome** — readiness measures solo-quality, and an override means the agent's own call was wrong (a human had to correct it), so a rescued outcome must not inflate readiness. (`ESCALATED` is excluded — knowing one's limits is not being wrong.)
 - `confidenceAvg` = mean(`confidence`) over resolved decisions that reported one.
 - `overrideRate`  = `OVERRIDDEN` / decisions a human engaged with (`OVERRIDDEN` + `ACCEPTED`).
 - `escalationRate`= `ESCALATED` / resolved decisions in window.
