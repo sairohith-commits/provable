@@ -15,6 +15,13 @@ dist/
 # Test / coverage
 coverage/
 
+# Python (sdk-python)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
 # Logs
 *.log
 npm-debug.log*

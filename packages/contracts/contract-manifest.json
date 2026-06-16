@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "verdictKinds": [
+    "PENDING",
+    "ACCEPTED",
+    "OVERRIDDEN",
+    "ESCALATED",
+    "FAILED"
+  ],
+  "outcomes": [
+    "SUCCESS",
+    "PARTIAL",
+    "FAILURE"
+  ],
+  "sources": [
+    "gateway",
+    "sdk",
+    "connector",
+    "otel"
+  ],
+  "autonomyModes": [
+    "OBSERVING",
+    "SHADOW",
+    "CO_PILOT",
+    "SOLO",
+    "SUSPENDED",
+    "RETIRED"
+  ],
+  "agentIdentityStates": [
+    "DISCOVERED",
+    "ACTIVE",
+    "DORMANT",
+    "RETIRED"
+  ],
+  "transitionDirections": [
+    "PROMOTION",
+    "DEMOTION",
+    "LATERAL"
+  ],
+  "transitionTriggers": [
+    "SCORE_CROSS",
+    "DRIFT",
+    "GUARDRAIL",
+    "MANUAL",
+    "SCHEDULED"
+  ],
+  "transitionStatuses": [
+    "PROPOSED",
+    "PENDING_APPROVAL",
+    "APPLIED",
+    "AUTO_APPLIED",
+    "REJECTED"
+  ]
+}

@@ -64,3 +64,27 @@ jobs:
 
       - name: Arch-gate guard (prove the gate still reports known-bad imports)
         run: pnpm arch:guard
+
+  # Isolated Python SDK job (own uv toolchain, OUTSIDE the Turbo pipeline). Runs on
+  # every push so an un-mirrored TS contract change (manifest vs Pydantic enums) fails CI.
+  sdk-python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk-python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync
+        run: uv sync
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Test (unit + drift; integration auto-skips without a live API)
+        run: uv run pytest -m "not integration"
