@@ -26,5 +26,5 @@ export { mapDecision, mapTransition, mapVerdictEvent, mapScore } from './mappers
 export type { ScoreRecord } from './mappers.js';
 export { makeRecomputePorts } from './recompute-ports.js';
 export type { RecomputePorts } from './recompute-ports.js';
-export { resolveOrgByApiKey } from './auth.js';
-export { provisionOrg } from './provision.js';
+export { resolveOrgByApiKey, resolveOrgByClerkOrgId } from './auth.js';
+export { provisionOrg, linkClerkOrg } from './provision.js';

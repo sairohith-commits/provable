@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { OrgId } from '@provable/contracts';
 import { resolveOrgByApiKey } from '@provable/persistence';
 
@@ -47,4 +47,44 @@ export function extractKey(headers: Record<string, unknown>): string | undefined
   if (typeof auth === 'string' && auth.startsWith('Bearer ')) return auth.slice('Bearer '.length).trim();
   const x = headers['x-api-key'];
   return typeof x === 'string' ? x : undefined;
+}
+
+// ── Internal (web↔api) auth: shared token + org-id from the web's VERIFIED Clerk session.
+//    Honored ONLY on the read routes + the approve route; never on /track or /register.
+
+/**
+ * Constant-time compare of the presented internal token against PROVABLE_INTERNAL_TOKEN.
+ * Length guard first (timingSafeEqual throws on unequal lengths) → a bad token is a 401,
+ * never a 500. Returns false if the env token is unset/empty (fail closed).
+ */
+export function internalTokenValid(presented: string | undefined): boolean {
+  const expected = process.env['PROVABLE_INTERNAL_TOKEN'];
+  if (expected === undefined || expected.length === 0) return false;
+  if (presented === undefined || presented.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(presented), Buffer.from(expected));
+}
+
+export interface InternalContext {
+  readonly orgId: OrgId;
+  readonly approver: string | undefined;
+}
+
+/**
+ * Resolve the internal caller. Requires a valid internal token AND an org id (the web
+ * sends the Provable orgId it resolved from the verified Clerk session — never client
+ * input). Returns null when the token is absent/invalid or the org id is missing.
+ */
+export function resolveInternal(headers: Record<string, unknown>): InternalContext | null {
+  const token = headers['x-provable-internal-token'];
+  if (typeof token !== 'string' || !internalTokenValid(token)) return null;
+  const orgId = headers['x-provable-org-id'];
+  if (typeof orgId !== 'string' || orgId.length === 0) return null;
+  const approver = headers['x-provable-approver'];
+  return { orgId: orgId as OrgId, approver: typeof approver === 'string' ? approver : undefined };
+}
+
+/** True iff a valid internal token is present (org id not required) — for /resolve-org. */
+export function hasValidInternalToken(headers: Record<string, unknown>): boolean {
+  const token = headers['x-provable-internal-token'];
+  return typeof token === 'string' && internalTokenValid(token);
 }

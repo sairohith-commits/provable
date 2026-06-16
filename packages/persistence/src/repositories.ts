@@ -42,6 +42,11 @@ export const orgRepo = {
       update: { apiKeyPrefix, apiKeyHash },
     });
   },
+
+  /** Link a Clerk Organization to this Provable org (Phase 7 dashboard auth). */
+  async linkClerkOrg(tx: TenantClient, orgId: OrgId, clerkOrgId: string): Promise<void> {
+    await tx.org.update({ where: { id: orgId }, data: { clerkOrgId } });
+  },
 };
 
 export const agentRepo = {
@@ -84,6 +89,18 @@ export const taskRepo = {
       where: { orgId_agentKey_taskKey: { orgId, agentKey, taskKey } },
     });
     return row === null ? null : row.effectiveMode;
+  },
+
+  /** All agent×task rows for the current tenant (RLS-scoped) — for the dashboard registry. */
+  async list(
+    tx: TenantClient,
+  ): Promise<{ agentKey: AgentKey; taskKey: TaskKey; effectiveMode: AutonomyMode }[]> {
+    const rows = await tx.task.findMany({ orderBy: [{ agentKey: 'asc' }, { taskKey: 'asc' }] });
+    return rows.map((r) => ({
+      agentKey: r.agentKey as AgentKey,
+      taskKey: r.taskKey as TaskKey,
+      effectiveMode: r.effectiveMode,
+    }));
   },
 };
 

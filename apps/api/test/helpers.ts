@@ -68,3 +68,44 @@ const BASE_MS = Date.parse('2026-06-15T00:00:00.000Z');
 export function at(i: number): string {
   return new Date(BASE_MS + i * 60_000).toISOString();
 }
+
+/** Headers for an internal (web↔api) call: token + the web-resolved Provable org id. */
+export function internalHeaders(
+  token: string,
+  orgId: string,
+  approver?: string,
+): Record<string, string> {
+  return {
+    'content-type': 'application/json',
+    'x-provable-internal-token': token,
+    'x-provable-org-id': orgId,
+    ...(approver !== undefined ? { 'x-provable-approver': approver } : {}),
+  };
+}
+
+/** Drive a clean high-score climb to PENDING_APPROVAL (machine-key /track). */
+export async function climbToPending(
+  app: FastifyInstance,
+  key: string,
+  agentKey: string,
+  taskKey: string,
+  n = 14,
+): Promise<InjectResponse> {
+  await register(app, key, { agentKey, taskKey });
+  let last!: InjectResponse;
+  for (let i = 0; i < n; i += 1) {
+    last = await track(app, key, {
+      type: 'decision',
+      agentKey,
+      taskKey,
+      at: at(i),
+      action: { i },
+      verdict: { kind: 'ACCEPTED' },
+      outcome: 'SUCCESS',
+      confidence: 0.95,
+      source: 'sdk',
+      externalRef: `${agentKey}:${taskKey}:${i}`,
+    });
+  }
+  return last;
+}

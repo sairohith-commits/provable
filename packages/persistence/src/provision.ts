@@ -18,3 +18,14 @@ export function provisionOrg(
     await orgRepo.setApiKey(tx, orgId, apiKeyPrefix, apiKeyHash);
   });
 }
+
+/**
+ * Link an existing Provable org to a Clerk Organization (the minimal demo link path).
+ * Runs inside withTenant so RLS WITH CHECK (id = current org) is satisfied.
+ */
+export function linkClerkOrg(orgId: OrgId, clerkOrgId: string): Promise<void> {
+  return withTenant(orgId, async (tx) => {
+    await orgRepo.ensure(tx, orgId);
+    await orgRepo.linkClerkOrg(tx, orgId, clerkOrgId);
+  });
+}

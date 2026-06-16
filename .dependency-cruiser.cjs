@@ -106,6 +106,18 @@ module.exports = {
       to: { path: '^(packages/adapters/|apps/)' },
     },
 
+    // ── apps/web is a PURE HTTP client — contracts (types) only among internal pkgs ──
+    {
+      name: 'web-only-contracts',
+      severity: 'error',
+      comment:
+        'apps/web talks to the API over HTTP. Among internal packages it imports ONLY ' +
+        '@provable/contracts (types) — never persistence, core, or the api package (no DB ' +
+        'credentials, no shared server code). Phase 7.',
+      from: { path: '^apps/web/src/' },
+      to: { path: '(^packages/(persistence|core)/|@provable/(persistence|core|api))' },
+    },
+
     // ── apps are the composition root — nothing may import them ──────────────
     {
       name: 'nothing-imports-apps',

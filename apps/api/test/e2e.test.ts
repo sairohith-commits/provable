@@ -1,10 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { at, makeApp, provision, register, resetDb, teardown, track } from './helpers.js';
+import {
+  at,
+  internalHeaders,
+  makeApp,
+  provision,
+  register,
+  resetDb,
+  teardown,
+  track,
+} from './helpers.js';
+
+const INTERNAL_TOKEN = 'test-internal-token-0123456789';
 
 let app: FastifyInstance;
 
 beforeAll(() => {
+  process.env['PROVABLE_INTERNAL_TOKEN'] = INTERNAL_TOKEN;
   app = makeApp();
 });
 afterAll(() => teardown(app));
@@ -51,10 +63,15 @@ describe('End-to-end HTTP loop', () => {
     expect(statuses).toContain('PENDING_APPROVAL');
     expect(statuses).not.toContain('APPLIED');
 
-    // Approval path: a manual APPROVE applies the promotion (one band).
-    const approve = (await track(app, key, decision(15, {
-      signals: { manual: { kind: 'APPROVE', approver: 'alice' } },
-    }))).json();
+    // Approval path: the Clerk-authed human endpoint applies the promotion (one band).
+    // (The machine key cannot approve — that path is retired; see phase7.test.ts.)
+    const approve = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents/a1/tasks/t1/approve',
+        headers: internalHeaders(INTERNAL_TOKEN, 'org_e2e', 'alice'),
+      })
+    ).json();
     expect(approve.effectiveMode).toBe('CO_PILOT');
     const applied = approve.transitions.find((t: { status: string }) => t.status === 'APPLIED');
     expect(applied.direction).toBe('PROMOTION');

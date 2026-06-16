@@ -1,0 +1,208 @@
+@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* Light-glass design tokens (locked direction). */
+:root {
+  --band-solo: #0ea47e;
+  --band-copilot: #3b72e0;
+  --band-shadow: #e0922a;
+  --danger: #e0466a;
+
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --ink: #18202b;
+  --muted: #6b7787;
+  --hairline: #e6eaf0;
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+h1, h2, .brand {
+  font-family: var(--font-display);
+}
+
+/* Frosted-white glass accent over a near-solid surface (dense data stays legible). */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  margin: 12px;
+}
+.brand-sub {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.chrome-right {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+main {
+  padding: 0 16px 48px;
+}
+.card,
+.empty {
+  padding: 24px;
+}
+.empty {
+  color: var(--muted);
+}
+
+.persona-lens {
+  display: flex;
+  gap: 8px;
+  margin: 8px 4px 16px;
+}
+.lens {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.lens.active {
+  color: var(--ink);
+  border-color: var(--band-copilot);
+}
+
+.pillar {
+  margin-bottom: 28px;
+}
+.pillar h2 {
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  margin: 0 4px 10px;
+}
+
+.agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.agent-row {
+  display: grid;
+  grid-template-columns: 200px 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 18px;
+}
+.agent-key {
+  font-weight: 600;
+  display: block;
+}
+.task-key {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Readiness ladder */
+.ladder {
+  display: grid;
+  gap: 6px;
+}
+.ladder-zones {
+  position: relative;
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.zone-shadow {
+  background: color-mix(in srgb, var(--band-shadow) 30%, white);
+}
+.zone-copilot {
+  background: color-mix(in srgb, var(--band-copilot) 30%, white);
+}
+.zone-solo {
+  background: color-mix(in srgb, var(--band-solo) 30%, white);
+}
+.marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 18px;
+  background: var(--ink);
+  border-radius: 2px;
+  transform: translateX(-50%);
+}
+.ladder-meta {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.ladder-meta .score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.ladder-meta .effective strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+}
+
+.approve {
+  background: var(--band-copilot);
+  color: white;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.approve:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.feed-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.t-approver {
+  color: var(--band-solo);
+}
+.status-auto_applied {
+  color: var(--band-shadow);
+}
+.t-at {
+  margin-left: auto;
+  color: var(--muted);
+}

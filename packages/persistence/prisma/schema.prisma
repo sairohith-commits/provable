@@ -91,6 +91,7 @@ model Org {
   name         String?
   apiKeyPrefix String? @unique // lookup handle for the machine key
   apiKeyHash   String? // sha256 of the full key (secret never stored in clear)
+  clerkOrgId   String? @unique // links a Clerk Organization to this Provable org (Phase 7)
   createdAt    DateTime @default(now())
 
   agents        Agent[]

@@ -47,6 +47,12 @@ const cases = [
     code: `import * as fs from 'node:fs';\nexport const _guard = fs;\n`,
     expectRules: ['core-src-only-contracts'],
   },
+  {
+    name: 'web → persistence',
+    dir: 'apps/web/src',
+    code: `import { withTenant } from '@provable/persistence';\nexport const _guard = withTenant;\n`,
+    expectRules: ['web-only-contracts'],
+  },
 ];
 
 /** Cruise the given (already-quoted) path args; return { exitCode, output }. */

@@ -1,0 +1,34 @@
+{
+  "name": "@provable/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Provable dashboard — Next.js App Router. A PURE HTTP client of the read API (no DB creds, no persistence/core import).",
+  "scripts": {
+    "dev": "next dev -p 3020",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "build:next": "next build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"web e2e is Playwright (needs Clerk dev keys); see e2e/\" && exit 0",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.5.3",
+    "@provable/contracts": "workspace:*",
+    "next": "^16.2.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^3.8.1",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@clerk/testing": "^2.1.2",
+    "@playwright/test": "^1.61.0",
+    "@tailwindcss/postcss": "^4.3.1",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^5.7.3"
+  }
+}
