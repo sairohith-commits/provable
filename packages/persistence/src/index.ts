@@ -16,6 +16,7 @@ export {
   agentRepo,
   decisionRepo,
   orgRepo,
+  scoreRepo,
   taskRepo,
   transitionRepo,
   verdictEventRepo,
@@ -23,3 +24,7 @@ export {
 export type { DecisionCreateInput, VerdictEventInput } from './repositories.js';
 export { mapDecision, mapTransition, mapVerdictEvent, mapScore } from './mappers.js';
 export type { ScoreRecord } from './mappers.js';
+export { makeRecomputePorts } from './recompute-ports.js';
+export type { RecomputePorts } from './recompute-ports.js';
+export { resolveOrgByApiKey } from './auth.js';
+export { provisionOrg } from './provision.js';

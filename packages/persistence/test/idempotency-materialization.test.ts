@@ -43,8 +43,9 @@ describe('Verdict event idempotency + decision materialization', () => {
     const afterSecond = await withTenant(A, (tx) => verdictEventRepo.apply(tx, event));
 
     // Materialization: decision is now resolved as ACCEPTED / SUCCESS.
-    expect(afterSecond?.verdict.kind).toBe('ACCEPTED');
-    expect(afterSecond?.outcome).toBe('SUCCESS');
+    expect(afterSecond.decision?.verdict.kind).toBe('ACCEPTED');
+    expect(afterSecond.decision?.outcome).toBe('SUCCESS');
+    expect(afterSecond.appended).toBe(false); // replay did not append
 
     // Idempotency: only ONE log row despite two applications.
     const count = await withTenant(A, (tx) => verdictEventRepo.countForExternalRef(tx, A, ref));

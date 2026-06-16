@@ -11,7 +11,8 @@ import type {
   Verdict,
 } from '@provable/contracts';
 import type { OrgId, TaskKey } from '@provable/contracts';
-import { mapDecision, mapTransition, mapVerdictEvent } from './mappers.js';
+import { mapDecision, mapScore, mapTransition, mapVerdictEvent } from './mappers.js';
+import type { ScoreRecord } from './mappers.js';
 import type { TenantClient } from './tenant.js';
 
 function asJson(value: unknown): Prisma.InputJsonValue {
@@ -25,6 +26,20 @@ export const orgRepo = {
       where: { id: orgId },
       create: { id: orgId, ...(name !== undefined ? { name } : {}) },
       update: {},
+    });
+  },
+
+  /** Set the org's machine-key handle (prefix) + sha256 hash. Secret is never stored. */
+  async setApiKey(
+    tx: TenantClient,
+    orgId: OrgId,
+    apiKeyPrefix: string,
+    apiKeyHash: string,
+  ): Promise<void> {
+    await tx.org.upsert({
+      where: { id: orgId },
+      create: { id: orgId, apiKeyPrefix, apiKeyHash },
+      update: { apiKeyPrefix, apiKeyHash },
     });
   },
 };
@@ -57,6 +72,18 @@ export const taskRepo = {
       create: { orgId, agentKey, taskKey, ...(effectiveMode !== undefined ? { effectiveMode } : {}) },
       update: {},
     });
+  },
+
+  async findEffectiveMode(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: AgentKey,
+    taskKey: TaskKey,
+  ): Promise<AutonomyMode | null> {
+    const row = await tx.task.findUnique({
+      where: { orgId_agentKey_taskKey: { orgId, agentKey, taskKey } },
+    });
+    return row === null ? null : row.effectiveMode;
   },
 };
 
@@ -117,6 +144,18 @@ export const decisionRepo = {
     return row === null ? null : mapDecision(row);
   },
 
+  /** Idempotent ingest: if a decision with this externalRef exists, return it unchanged. */
+  async createIfAbsent(
+    tx: TenantClient,
+    input: DecisionCreateInput,
+  ): Promise<{ decision: Decision; created: boolean }> {
+    if (input.externalRef !== undefined) {
+      const existing = await decisionRepo.findByExternalRef(tx, input.orgId, input.externalRef);
+      if (existing !== null) return { decision: existing, created: false };
+    }
+    return { decision: await decisionRepo.create(tx, input), created: true };
+  },
+
   async list(tx: TenantClient): Promise<Decision[]> {
     const rows = await tx.decision.findMany({ orderBy: { createdAt: 'asc' } });
     return rows.map(mapDecision);
@@ -138,8 +177,11 @@ export const verdictEventRepo = {
    * Append the event (idempotent — replays dedup on (orgId, source, externalRef, at))
    * and materialize the target decision's current verdict/outcome/status.
    */
-  async apply(tx: TenantClient, event: VerdictEventInput): Promise<Decision | null> {
-    await tx.verdictEvent.createMany({
+  async apply(
+    tx: TenantClient,
+    event: VerdictEventInput,
+  ): Promise<{ decision: Decision | null; appended: boolean }> {
+    const { count } = await tx.verdictEvent.createMany({
       data: [
         {
           orgId: event.orgId,
@@ -155,11 +197,12 @@ export const verdictEventRepo = {
       ],
       skipDuplicates: true,
     });
+    const appended = count > 0;
 
     const decision = await tx.decision.findUnique({
       where: { orgId_externalRef: { orgId: event.orgId, externalRef: event.externalRef } },
     });
-    if (decision === null) return null;
+    if (decision === null) return { decision: null, appended };
 
     const data: Prisma.DecisionUpdateInput = {};
     if (event.verdict !== undefined) {
@@ -174,7 +217,7 @@ export const verdictEventRepo = {
     data.status = newVerdictKind !== 'PENDING' || newOutcome !== null ? 'RESOLVED' : 'PENDING';
 
     const updated = await tx.decision.update({ where: { id: decision.id }, data });
-    return mapDecision(updated);
+    return { decision: mapDecision(updated), appended };
   },
 
   async countForExternalRef(
@@ -215,5 +258,21 @@ export const transitionRepo = {
   async list(tx: TenantClient): Promise<Transition[]> {
     const rows = await tx.transition.findMany({ orderBy: { createdAt: 'asc' } });
     return rows.map(mapTransition);
+  },
+};
+
+// ── Score (read-back; written by the recompute ports) ─────────────────────────
+export const scoreRepo = {
+  async latest(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: AgentKey,
+    taskKey: TaskKey,
+  ): Promise<ScoreRecord | null> {
+    const row = await tx.score.findFirst({
+      where: { orgId, agentKey, taskKey },
+      orderBy: { calculatedAt: 'desc' },
+    });
+    return row === null ? null : mapScore(row);
   },
 };

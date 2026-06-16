@@ -1,0 +1,34 @@
+{
+  "name": "@provable/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Provable API — Fastify ingestion + zod gatekeeper + synchronous atomic recompute over the tenant data layer.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@provable/contracts": "workspace:*",
+    "@provable/core": "workspace:*",
+    "@provable/persistence": "workspace:*",
+    "fastify": "^5.8.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@prisma/client": "6.19.3",
+    "dotenv": "^17.4.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

@@ -283,9 +283,12 @@ interface IngestionAdapter {
 }
 ```
 
-The core exposes a single **driven ingestion port** that accepts `CanonicalEvent[]` and:
-upserts agent/task → persists decision → resolves verdicts → triggers recompute. Adapters
-depend on this port; core depends on no adapter. **That inversion is the whole design.**
+The **ingestion orchestration** — upsert agent/task → persist decision → resolve verdicts →
+trigger recompute — lives in the composition root (`apps/api`) and runs as one atomic,
+tenant-scoped transaction. `core` stays pure: it exposes **outbound port interfaces** only (the
+readers/writers a recompute needs), `persistence` **implements** them, and `apps/api` wires those
+concrete repos to core's pure compute functions. Core still depends on no adapter and no
+persistence. **That inversion is the whole design.**
 
 ---
 

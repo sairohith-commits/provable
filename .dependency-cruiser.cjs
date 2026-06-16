@@ -95,13 +95,27 @@ module.exports = {
       to: { path: '^packages/core/' },
     },
 
-    // ── persistence may import contracts + core ports only ──────────────────
+    // ── persistence may import contracts + core (ports) — NOT adapters/apps ──
     {
       name: 'persistence-no-adapters-or-apps',
       severity: 'error',
-      comment: 'persistence implements core ports; it must not reach adapters or apps (§3).',
+      comment:
+        'persistence implements core ports (so persistence → core is allowed, §3); it must not ' +
+        'reach adapters or apps.',
       from: { path: '^packages/persistence/' },
       to: { path: '^(packages/adapters/|apps/)' },
+    },
+
+    // ── apps are the composition root — nothing may import them ──────────────
+    {
+      name: 'nothing-imports-apps',
+      severity: 'error',
+      comment:
+        'apps/* wire everything; no package or other app dependency points INTO an app (§3). Matches ' +
+        'both a resolved apps/ path and the app package names (which are unresolvable from a ' +
+        'non-dependent package, hence matched by specifier).',
+      from: { pathNot: '^apps/' },
+      to: { path: '(^apps/|^@provable/(api|web)$)' },
     },
 
     /*
@@ -139,15 +153,12 @@ module.exports = {
       exportsFields: ['exports'],
       conditionNames: ['types', 'import', 'node', 'default'],
     },
-    // doNotFollow (NOT includeOnly/exclude) for node_modules: this keeps the
-    // dependency EDGES into npm packages and Node built-ins so the npm/builtin
-    // rules above can actually fire — it just stops the cruise from recursing
-    // into them. (`includeOnly`/`exclude` would prune those edges entirely and
-    // silently neuter the zero-runtime-dep and purity gates.)
-    doNotFollow: { path: 'node_modules' },
-    // Exclude ONLY our own build output as cruise sources — NOT a bare `/dist/`,
-    // which would also match `node_modules/<pkg>/dist/...` entry points and prune
-    // every npm edge (silently neutering the npm gates).
-    exclude: { path: '^packages/[^/]+/dist/' },
+    // doNotFollow (NOT includeOnly/exclude): keep the dependency EDGES into
+    // node_modules, Node built-ins, AND our own built dist/ (a workspace import like
+    // `@provable/api` resolves to `apps/api/dist/...`) so the path/type rules above
+    // can fire on them — we just don't recurse into those modules. `exclude` would
+    // DROP those edges and silently neuter the gates. The cruise entry points are
+    // src/ only (see the depcruise script), so dist is never cruised as a source.
+    doNotFollow: { path: '(node_modules|/dist/)' },
   },
 };

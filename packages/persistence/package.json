@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
-    "@provable/contracts": "workspace:*"
+    "@provable/contracts": "workspace:*",
+    "@provable/core": "workspace:*"
   },
   "devDependencies": {
     "dotenv": "^17.4.2",

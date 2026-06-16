@@ -87,9 +87,11 @@ enum ScoreStatus {
 
 // ── Entities ───────────────────────────────────────────────────────────────────
 model Org {
-  id        String   @id // OrgId (tenant)
-  name      String?
-  createdAt DateTime @default(now())
+  id           String  @id // OrgId (tenant)
+  name         String?
+  apiKeyPrefix String? @unique // lookup handle for the machine key
+  apiKeyHash   String? // sha256 of the full key (secret never stored in clear)
+  createdAt    DateTime @default(now())
 
   agents        Agent[]
   tasks         Task[]
@@ -122,6 +124,11 @@ model Task {
   agentKey      String
   taskKey       String
   effectiveMode AutonomyMode @default(OBSERVING)
+  // Materialized lifecycle bookkeeping (the transition log stays the immutable history).
+  consecutivePromotionReady Int           @default(0)
+  consecutiveSubFloor       Int           @default(0)
+  pendingToMode             AutonomyMode?
+  pendingAwaitingApproval   Boolean       @default(false)
   createdAt     DateTime     @default(now())
 
   org       Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)

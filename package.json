@@ -10,9 +10,10 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
+    "test": "turbo run test --concurrency=1",
     "lint": "turbo run lint",
-    "depcruise": "depcruise packages --config .dependency-cruiser.cjs"
+    "depcruise": "depcruise \"packages/*/src\" \"apps/*/src\" --config .dependency-cruiser.cjs",
+    "arch:guard": "node scripts/arch-gate-guard.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

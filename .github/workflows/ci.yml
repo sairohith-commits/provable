@@ -61,3 +61,6 @@ jobs:
 
       - name: Depcruise (architecture gate)
         run: pnpm depcruise
+
+      - name: Arch-gate guard (prove the gate still reports known-bad imports)
+        run: pnpm arch:guard

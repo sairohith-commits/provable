@@ -6,6 +6,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Transient arch-gate guard fixtures (deleted after each run; ignored in case of a crash)
+**/__arch_guard__.ts
+
 # Turbo
 .turbo/
 
