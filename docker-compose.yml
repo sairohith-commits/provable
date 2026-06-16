@@ -1,0 +1,29 @@
+# Local dev Postgres for Provable persistence (Phase 3).
+# One-command spin-up:  docker compose up -d
+# Tear down (keep data): docker compose down
+# Tear down + wipe:      docker compose down -v
+#
+# The init script (docker/initdb) creates the RLS-subject app role `provable_app`.
+# Migrations connect as the superuser (DIRECT_URL) and bypass RLS; the app connects
+# as provable_app (DATABASE_URL) and is fully governed by row-level security.
+services:
+  postgres:
+    image: postgres:16
+    container_name: provable-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: provable
+    ports:
+      - '5434:5432' # host 5434 (5432/5433 commonly taken by other local Postgres)
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - provable_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d provable']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  provable_pgdata:

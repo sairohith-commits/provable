@@ -1,0 +1,234 @@
+// Provable persistence — Phase 3 data layer.
+//
+// RLS policies, grants and the verdict_event immutability trigger live in a raw-SQL
+// migration (Prisma's schema language can't express them). orgId is NOT NULL on every
+// table; externalRef is UNIQUE per org for idempotency.
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // app role (provable_app) — RLS-enforced
+  directUrl = env("DIRECT_URL") // superuser — migrations only (DDL/grants/RLS)
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ── Enums (mirror @provable/contracts const arrays; the DB can't import TS) ─────
+enum AgentIdentityState {
+  DISCOVERED
+  ACTIVE
+  DORMANT
+  RETIRED
+}
+
+enum AutonomyMode {
+  OBSERVING
+  SHADOW
+  CO_PILOT
+  SOLO
+  SUSPENDED
+  RETIRED
+}
+
+enum VerdictKind {
+  PENDING
+  ACCEPTED
+  OVERRIDDEN
+  ESCALATED
+  FAILED
+}
+
+enum Outcome {
+  SUCCESS
+  PARTIAL
+  FAILURE
+}
+
+enum Source {
+  gateway
+  sdk
+  connector
+  otel
+}
+
+// Materialized resolution status of a decision (derived from its current verdict/outcome).
+enum DecisionStatus {
+  PENDING
+  RESOLVED
+}
+
+enum TransitionDirection {
+  PROMOTION
+  DEMOTION
+  LATERAL
+}
+
+enum TransitionTrigger {
+  SCORE_CROSS
+  DRIFT
+  GUARDRAIL
+  MANUAL
+  SCHEDULED
+}
+
+enum TransitionStatus {
+  PROPOSED
+  PENDING_APPROVAL
+  APPLIED
+  AUTO_APPLIED
+  REJECTED
+}
+
+enum ScoreStatus {
+  SCORED
+  INSUFFICIENT
+}
+
+// ── Entities ───────────────────────────────────────────────────────────────────
+model Org {
+  id        String   @id // OrgId (tenant)
+  name      String?
+  createdAt DateTime @default(now())
+
+  agents        Agent[]
+  tasks         Task[]
+  decisions     Decision[]
+  verdictEvents VerdictEvent[]
+  transitions   Transition[]
+  scores        Score[]
+
+  @@map("org")
+}
+
+model Agent {
+  orgId         String
+  agentKey      String
+  identityState AgentIdentityState @default(DISCOVERED)
+  createdAt     DateTime           @default(now())
+
+  org       Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  decisions Decision[]
+
+  @@id([orgId, agentKey])
+  @@index([orgId])
+  @@map("agent")
+}
+
+// The agent×task autonomy unit (§2A "Autonomy per agent × task"); holds effectiveMode.
+model Task {
+  orgId         String
+  agentKey      String
+  taskKey       String
+  effectiveMode AutonomyMode @default(OBSERVING)
+  createdAt     DateTime     @default(now())
+
+  org       Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  agent     Agent      @relation(fields: [orgId, agentKey], references: [orgId, agentKey], onDelete: Cascade)
+  decisions Decision[]
+
+  @@id([orgId, agentKey, taskKey])
+  @@index([orgId])
+  @@index([orgId, agentKey])
+  @@map("task")
+}
+
+model Decision {
+  id            String   @id @default(uuid()) // DecisionId (Provable-assigned)
+  orgId         String
+  agentKey      String
+  taskKey       String
+  at            DateTime
+  action        Json // OPAQUE to core
+  confidence    Float?
+  costTokens    Int?
+  costUsd       Float?
+  costLatencyMs Int?
+
+  // Materialized current state (resolved asynchronously by VerdictEvents):
+  verdictKind       VerdictKind    @default(PENDING)
+  overrideMagnitude Float?
+  outcome           Outcome?
+  status            DecisionStatus @default(PENDING)
+
+  source      Source
+  externalRef String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org   Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [orgId, agentKey], references: [orgId, agentKey], onDelete: Cascade)
+  task  Task  @relation(fields: [orgId, agentKey, taskKey], references: [orgId, agentKey, taskKey], onDelete: Cascade)
+
+  @@unique([orgId, externalRef]) // idempotency per org (NULLs are distinct)
+  @@index([orgId, agentKey, taskKey])
+  @@index([orgId, externalRef])
+  @@map("decision")
+}
+
+// Append-only log. Immutability (no UPDATE/DELETE) is enforced at the DB.
+model VerdictEvent {
+  id                String      @id @default(uuid())
+  orgId             String
+  source            Source
+  externalRef       String // links to Decision.externalRef
+  verdictKind       VerdictKind?
+  overrideMagnitude Float?
+  outcome           Outcome?
+  at                DateTime
+  createdAt         DateTime    @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, source, externalRef, at]) // idempotent replay dedup
+  @@index([orgId, externalRef])
+  @@map("verdict_event")
+}
+
+model Transition {
+  id        String              @id @default(uuid())
+  orgId     String
+  agentKey  String
+  taskKey   String
+  fromMode  AutonomyMode
+  toMode    AutonomyMode
+  direction TransitionDirection
+  trigger   TransitionTrigger
+  status    TransitionStatus
+  approver  String?
+  reason    String
+  at        DateTime
+  createdAt DateTime            @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, agentKey, taskKey])
+  @@map("transition")
+}
+
+model Score {
+  id             String      @id @default(uuid())
+  orgId          String
+  agentKey       String
+  taskKey        String
+  status         ScoreStatus
+  readinessScore Float?
+  accuracyRate   Float?
+  confidenceAvg  Float?
+  overrideRate   Float?
+  escalationRate Float?
+  impliedBand    String? // SHADOW | CO_PILOT | SOLO when SCORED
+  missing        String[] // component keys absent when INSUFFICIENT
+  eventCount     Int
+  resolvedCount  Int
+  calculatedAt   DateTime
+  createdAt      DateTime    @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, agentKey, taskKey])
+  @@index([orgId, calculatedAt])
+  @@map("score")
+}
