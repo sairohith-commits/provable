@@ -1,0 +1,225 @@
+import type { Decision } from '@provable/contracts';
+
+/**
+ * Readiness engine — PURE and deterministic (PROVABLE_CORE_ARCHITECTURE.md §1/§2).
+ *
+ * No clock, no randomness, no I/O. The 30-day window is evaluated relative to a
+ * passed-in `asOf`; nothing reads the wall clock.
+ *
+ * Phase-2 governance decisions applied:
+ *   Q1 — every rate is computed over the RESOLVED set R (window, verdict ≠ PENDING).
+ *        Only escalation's denominator actually moved (total → |R|); override and
+ *        accuracy were already resolved-based. (Doc edit: §2 escalation clause.)
+ *   Q3 — WITHHOLD instead of renormalize: if any signal's source data is absent,
+ *        no number is emitted — the result is INSUFFICIENT (the doc's "degrades
+ *        gracefully", §5: "can only be Observed, never Scored").
+ */
+
+// ─── LOCKED constants (source: PROVABLE_CORE_ARCHITECTURE.md §2) ──────────────
+/** locked — source: PROVABLE_CORE_ARCHITECTURE.md §2 */
+export const READINESS_WEIGHTS = {
+  accuracy: 0.4,
+  confidence: 0.25,
+  override: 0.2,
+  escalation: 0.15,
+} as const;
+
+/** locked — source: PROVABLE_CORE_ARCHITECTURE.md §2 (band ≤40 Shadow | 41–70 Co-Pilot | 71–100 Solo) */
+export const BAND_THRESHOLDS = {
+  shadowMax: 40,
+  coPilotMax: 70,
+} as const;
+
+/** locked — source: PROVABLE_CORE_ARCHITECTURE.md §2 (rolling 30 days) */
+export const READINESS_WINDOW_DAYS = 30;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// ─── Result types ────────────────────────────────────────────────────────────
+
+/** The score-implied band — informational only; NOT the effectiveMode (§2A). */
+export type ScoreImpliedBand = 'SHADOW' | 'CO_PILOT' | 'SOLO';
+
+export type ComponentKey = 'accuracyRate' | 'confidenceAvg' | 'overrideRate' | 'escalationRate';
+
+/** The four formula inputs (all present — a SCORED result implies every signal exists). */
+export interface ReadinessComponents {
+  readonly accuracyRate: number;
+  readonly confidenceAvg: number;
+  readonly overrideRate: number;
+  readonly escalationRate: number;
+}
+
+export interface ScoredReadiness {
+  readonly status: 'SCORED';
+  readonly readinessScore: number; // 0–100
+  readonly components: ReadinessComponents;
+  readonly impliedBand: ScoreImpliedBand;
+  readonly eventCount: number; // total decisions in the window
+  readonly resolvedCount: number; // |R| — non-PENDING decisions in the window
+}
+
+export interface InsufficientReadiness {
+  readonly status: 'INSUFFICIENT';
+  readonly missing: readonly ComponentKey[];
+  readonly eventCount: number;
+  readonly resolvedCount: number;
+}
+
+/** WITHHOLD model: either a real score, or an explicit unscored result (Q3). */
+export type ReadinessResult = ScoredReadiness | InsufficientReadiness;
+
+// ─── Band mapping ────────────────────────────────────────────────────────────
+
+export function impliedBandForScore(score: number): ScoreImpliedBand {
+  if (score <= BAND_THRESHOLDS.shadowMax) return 'SHADOW';
+  if (score <= BAND_THRESHOLDS.coPilotMax) return 'CO_PILOT';
+  return 'SOLO';
+}
+
+// ─── Derivation (all over the resolved set R) ────────────────────────────────
+
+function inWindow(at: string, asOfMs: number, lowerMs: number): boolean {
+  const t = Date.parse(at); // parsing an explicit string is deterministic — no clock
+  return !Number.isNaN(t) && t >= lowerMs && t <= asOfMs;
+}
+
+/**
+ * accuracyRate (§2): successes / resolved-with-a-correctness-signal.
+ *
+ * Chosen interpretations (flagged — doc leaves these unspecified):
+ *   - PARTIAL outcome → 0.5 credit.
+ *   - denominator = resolved decisions carrying a correctness signal (an OUTCOME,
+ *     or a verdict of ACCEPTED/FAILED). OVERRIDDEN/ESCALATED WITHOUT an outcome are
+ *     excluded (measured by their own rates — including them double-penalizes).
+ *   - OUTCOME wins over verdict when both are present (it is ground truth).
+ *
+ * Computation is UNCHANGED from Phase 2. Note the separate WITHHOLD gate below
+ * treats accuracy as "absent" only when there is no OUTCOME-bearing resolved
+ * decision; this function may still produce a number from ACCEPTED/FAILED verdicts.
+ */
+function deriveAccuracy(resolved: readonly Decision[]): number {
+  let credit = 0;
+  let denom = 0;
+  for (const d of resolved) {
+    if (d.outcome !== undefined) {
+      denom += 1;
+      if (d.outcome === 'SUCCESS') credit += 1;
+      else if (d.outcome === 'PARTIAL') credit += 0.5;
+      continue;
+    }
+    if (d.verdict.kind === 'ACCEPTED') {
+      denom += 1;
+      credit += 1;
+    } else if (d.verdict.kind === 'FAILED') {
+      denom += 1;
+    }
+  }
+  return denom === 0 ? 0 : credit / denom;
+}
+
+function deriveConfidence(resolved: readonly Decision[]): number {
+  let sum = 0;
+  let n = 0;
+  for (const d of resolved) {
+    if (d.confidence !== undefined) {
+      sum += d.confidence;
+      n += 1;
+    }
+  }
+  return n === 0 ? 0 : sum / n;
+}
+
+/**
+ * overrideRate (§2) = OVERRIDDEN / (OVERRIDDEN + ACCEPTED). 0/0 → 0 (no engagement observed).
+ *
+ * BACKLOG (no impl): override 0/0 → 0 gives full (1−override) credit when a resolved window has
+ * zero accept/override calls (escalation-only windows); under strict withhold this should arguably
+ * be INSUFFICIENT. Deferred — decide later. (Companion to the auto-demote-on-signal-loss BACKLOG
+ * item in lifecycle.ts.)
+ */
+function deriveOverride(resolved: readonly Decision[]): number {
+  let overridden = 0;
+  let engaged = 0;
+  for (const d of resolved) {
+    if (d.verdict.kind === 'OVERRIDDEN') {
+      overridden += 1;
+      engaged += 1;
+    } else if (d.verdict.kind === 'ACCEPTED') {
+      engaged += 1;
+    }
+  }
+  return engaged === 0 ? 0 : overridden / engaged;
+}
+
+/** escalationRate (§2, Q1) = ESCALATED / |R| (resolved decisions in window). */
+function deriveEscalation(resolved: readonly Decision[]): number {
+  if (resolved.length === 0) return 0;
+  let escalated = 0;
+  for (const d of resolved) {
+    if (d.verdict.kind === 'ESCALATED') escalated += 1;
+  }
+  return escalated / resolved.length;
+}
+
+/**
+ * Compute readiness over a 30-day window ending at `asOf`.
+ *
+ * Returns INSUFFICIENT (no score) when a signal's source data is absent:
+ *   - |R| = 0, OR
+ *   - no OUTCOME-bearing resolved decision (accuracy absent), OR
+ *   - no resolved decision reported confidence (confidence absent).
+ * (Override and escalation always exist once |R| ≥ 1.)
+ */
+export function computeReadiness(decisions: readonly Decision[], asOf: string): ReadinessResult {
+  const asOfMs = Date.parse(asOf);
+  if (Number.isNaN(asOfMs)) {
+    throw new Error(`computeReadiness: asOf is not a valid ISO timestamp: ${asOf}`);
+  }
+  const lowerMs = asOfMs - READINESS_WINDOW_DAYS * MS_PER_DAY;
+
+  const windowed = decisions.filter((d) => inWindow(d.at, asOfMs, lowerMs));
+  const resolved = windowed.filter((d) => d.verdict.kind !== 'PENDING');
+  const eventCount = windowed.length;
+  const resolvedCount = resolved.length;
+
+  if (resolvedCount === 0) {
+    return {
+      status: 'INSUFFICIENT',
+      missing: ['accuracyRate', 'confidenceAvg', 'overrideRate', 'escalationRate'],
+      eventCount,
+      resolvedCount,
+    };
+  }
+
+  const missing: ComponentKey[] = [];
+  const hasOutcome = resolved.some((d) => d.outcome !== undefined);
+  const hasConfidence = resolved.some((d) => d.confidence !== undefined);
+  if (!hasOutcome) missing.push('accuracyRate');
+  if (!hasConfidence) missing.push('confidenceAvg');
+
+  if (missing.length > 0) {
+    return { status: 'INSUFFICIENT', missing, eventCount, resolvedCount };
+  }
+
+  const accuracyRate = deriveAccuracy(resolved);
+  const confidenceAvg = deriveConfidence(resolved);
+  const overrideRate = deriveOverride(resolved);
+  const escalationRate = deriveEscalation(resolved);
+
+  const readinessScore =
+    (accuracyRate * READINESS_WEIGHTS.accuracy +
+      confidenceAvg * READINESS_WEIGHTS.confidence +
+      (1 - overrideRate) * READINESS_WEIGHTS.override +
+      (1 - escalationRate) * READINESS_WEIGHTS.escalation) *
+    100;
+
+  return {
+    status: 'SCORED',
+    readinessScore,
+    components: { accuracyRate, confidenceAvg, overrideRate, escalationRate },
+    impliedBand: impliedBandForScore(readinessScore),
+    eventCount,
+    resolvedCount,
+  };
+}

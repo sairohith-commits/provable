@@ -124,9 +124,9 @@ window = rolling 30 days, per (agentKey × taskKey)
 Canonical derivation (the **only** place primitives become formula inputs):
 
 - `accuracyRate`  = successes / resolved, where success = `OUTCOME=SUCCESS` OR (`ACCEPTED` with no failing outcome); `FAILED` and `OUTCOME=FAILURE` count against.
-- `confidenceAvg` = mean(`confidence`) over decisions that reported one.
+- `confidenceAvg` = mean(`confidence`) over resolved decisions that reported one.
 - `overrideRate`  = `OVERRIDDEN` / decisions a human engaged with (`OVERRIDDEN` + `ACCEPTED`).
-- `escalationRate`= `ESCALATED` / total decisions in window.
+- `escalationRate`= `ESCALATED` / resolved decisions in window.
 
 If a domain can't supply a signal (e.g. no confidence), that term degrades gracefully —
 see §5 Observe-vs-Score boundary.

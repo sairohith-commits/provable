@@ -100,7 +100,7 @@ describe('Transition shape', () => {
     at: '2026-06-15T02:00:00.000Z',
   } as const;
 
-  it('requires approver for PROMOTION, optional otherwise (the governance asymmetry)', () => {
+  it('is the doc’s flat shape with optional approver (the rule is enforced in core)', () => {
     const promotion: Transition = { ...base, direction: 'PROMOTION', approver: 'alice' };
     const demotion: Transition = {
       ...base,
@@ -109,13 +109,18 @@ describe('Transition shape', () => {
       direction: 'DEMOTION',
     };
 
-    // A PROMOTION without an approver must NOT type-check. If this constraint
-    // were ever loosened, the @ts-expect-error below becomes unused and fails.
-    // @ts-expect-error - PROMOTION must carry an approver
-    const missingApprover: Transition = { ...base, direction: 'PROMOTION' };
+    // approver is OPTIONAL at the type level (doc §2A line 173). A PROPOSED
+    // promotion legitimately has no approver yet; core/lifecycle enforces that an
+    // APPLIED promotion must carry one. So this is type-valid by design:
+    const proposedNoApprover: Transition = { ...base, status: 'PROPOSED', direction: 'PROMOTION' };
+
+    expectTypeOf<Transition['approver']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<Transition['direction']>().toEqualTypeOf<
+      'PROMOTION' | 'DEMOTION' | 'LATERAL'
+    >();
 
     expect(promotion.approver).toBe('alice');
     expect(demotion.direction).toBe('DEMOTION');
-    expect(missingApprover.direction).toBe('PROMOTION');
+    expect(proposedNoApprover.approver).toBeUndefined();
   });
 });

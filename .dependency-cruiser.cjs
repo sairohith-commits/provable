@@ -44,6 +44,16 @@ module.exports = {
       from: { path: '^packages/contracts/' },
       to: { dependencyTypes: ['npm'] },
     },
+    {
+      name: 'contracts-src-self-contained',
+      severity: 'error',
+      comment:
+        'contracts SOURCE is the dependency-free leaf — it imports ONLY its own local files: no npm ' +
+        '(prod OR dev), no Node built-ins, no other workspace package. (Scoped to src/ so tests may ' +
+        'use the runner.)',
+      from: { path: '^packages/contracts/src/' },
+      to: { dependencyTypesNot: ['local'] },
+    },
 
     // ── core forward law (pre-encoded for later phases) ─────────────────────
     {
@@ -61,6 +71,19 @@ module.exports = {
       comment: 'core must never reach an adapter or an app. The inversion is the whole design (§4).',
       from: { path: '^packages/core/' },
       to: { path: '^(packages/adapters/|apps/)' },
+    },
+    {
+      name: 'core-src-only-contracts',
+      severity: 'error',
+      comment:
+        'core SOURCE may import ONLY local core files + @provable/contracts. This forbids Node ' +
+        'built-ins (no I/O/clock), any npm package (framework/vendor SDK), and any other workspace ' +
+        'package. PROVABLE_CORE_ARCHITECTURE.md §3/§6. (Scoped to src/ so tests may use the runner.)',
+      from: { path: '^packages/core/src/' },
+      to: {
+        dependencyTypesNot: ['local'],
+        pathNot: '(@provable/contracts|^packages/contracts/)',
+      },
     },
 
     // ── adapters never reach into core internals ────────────────────────────
@@ -104,13 +127,27 @@ module.exports = {
 
   options: {
     tsConfig: { fileName: 'tsconfig.base.json' },
+    // Capture type-only imports too (so a leaked vendor TYPE is still seen).
     tsPreCompilationDeps: true,
+    // Resolve bare specifiers (`@provable/contracts`, npm pkgs) reliably under
+    // pnpm + NodeNext: enhanced-resolve needs the TS/declaration extensions and
+    // the package `exports` conditions, otherwise these edges silently drop and
+    // the npm/purity gates become vacuous.
     enhancedResolveOptions: {
+      extensions: ['.ts', '.d.ts', '.tsx', '.js', '.jsx', '.json'],
+      mainFields: ['types', 'module', 'main'],
       exportsFields: ['exports'],
-      conditionNames: ['import', 'types', 'node', 'default'],
+      conditionNames: ['types', 'import', 'node', 'default'],
     },
+    // doNotFollow (NOT includeOnly/exclude) for node_modules: this keeps the
+    // dependency EDGES into npm packages and Node built-ins so the npm/builtin
+    // rules above can actually fire — it just stops the cruise from recursing
+    // into them. (`includeOnly`/`exclude` would prune those edges entirely and
+    // silently neuter the zero-runtime-dep and purity gates.)
     doNotFollow: { path: 'node_modules' },
-    includeOnly: '^(packages|apps)/',
-    exclude: { path: '(/dist/|/node_modules/)' },
+    // Exclude ONLY our own build output as cruise sources — NOT a bare `/dist/`,
+    // which would also match `node_modules/<pkg>/dist/...` entry points and prune
+    // every npm edge (silently neutering the npm gates).
+    exclude: { path: '^packages/[^/]+/dist/' },
   },
 };

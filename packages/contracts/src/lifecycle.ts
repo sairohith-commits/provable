@@ -49,27 +49,30 @@ export const TRANSITION_STATUSES = [
 ] as const;
 export type TransitionStatus = (typeof TRANSITION_STATUSES)[number];
 
-/** Fields shared by every Transition, regardless of direction. */
-interface TransitionBase {
+/**
+ * Transition — first-class, immutable, audited (§2A).
+ *
+ * Modeled field-for-field on the doc's interface (§2A, line 167): `approver?` is
+ * OPTIONAL. The doc comments it "REQUIRED for PROMOTION", but that is a *business*
+ * invariant, not a type-level one — a promotion is PROPOSED and held at
+ * PENDING_APPROVAL *before* any approver exists, so the type cannot demand an
+ * approver on every PROMOTION record. `core/lifecycle` enforces the real rule: a
+ * PROMOTION may only reach `status: 'APPLIED'` with an `approver` present.
+ *
+ * (Phase 1 modeled this as a discriminated union requiring `approver` on every
+ * PROMOTION; Phase 2 showed that makes a PROPOSED promotion unrepresentable, so
+ * this was corrected to the doc's literal flat shape. Doc wins.)
+ */
+export interface Transition {
   orgId: OrgId;
   agentKey: AgentKey;
   taskKey: TaskKey;
   fromMode: AutonomyMode;
   toMode: AutonomyMode;
+  direction: TransitionDirection;
   trigger: TransitionTrigger;
   status: TransitionStatus;
+  approver?: string; // REQUIRED for an APPLIED promotion — enforced by core/lifecycle
   reason: string; // evidence: score delta, drift metric, guardrail id
   at: string;
 }
-
-/**
- * Transition — first-class, immutable, audited (§2A).
- *
- * The asymmetry of governance: promotion is gated, demotion is automatic.
- * Encoded structurally — `approver` is REQUIRED when `direction === 'PROMOTION'`
- * and optional otherwise — via a discriminated union on `direction`.
- */
-export type Transition =
-  | (TransitionBase & { direction: 'PROMOTION'; approver: string })
-  | (TransitionBase & { direction: 'DEMOTION'; approver?: string })
-  | (TransitionBase & { direction: 'LATERAL'; approver?: string });
