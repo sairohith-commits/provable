@@ -128,6 +128,7 @@ model Task {
   // Materialized lifecycle bookkeeping (the transition log stays the immutable history).
   consecutivePromotionReady Int           @default(0)
   consecutiveSubFloor       Int           @default(0)
+  consecutiveInsufficient   Int           @default(0) // signal-loss demotion counter (Phase 7 backlog)
   pendingToMode             AutonomyMode?
   pendingAwaitingApproval   Boolean       @default(false)
   createdAt     DateTime     @default(now())

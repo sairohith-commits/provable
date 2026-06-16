@@ -131,12 +131,11 @@ function deriveConfidence(resolved: readonly Decision[]): number {
 }
 
 /**
- * overrideRate (§2) = OVERRIDDEN / (OVERRIDDEN + ACCEPTED). 0/0 → 0 (no engagement observed).
+ * overrideRate (§2) = OVERRIDDEN / (OVERRIDDEN + ACCEPTED).
  *
- * BACKLOG (no impl): override 0/0 → 0 gives full (1−override) credit when a resolved window has
- * zero accept/override calls (escalation-only windows); under strict withhold this should arguably
- * be INSUFFICIENT. Deferred — decide later. (Companion to the auto-demote-on-signal-loss BACKLOG
- * item in lifecycle.ts.)
+ * The empty-channel case (no ACCEPTED and no OVERRIDDEN) is handled upstream as WITHHOLD:
+ * computeReadiness returns INSUFFICIENT (override absent) rather than crediting a 0/0 → 0.
+ * So `engaged` is always ≥ 1 here. (Consistent with the Q3 withhold model.)
  */
 function deriveOverride(resolved: readonly Decision[]): number {
   let overridden = 0;
@@ -168,8 +167,9 @@ function deriveEscalation(resolved: readonly Decision[]): number {
  * Returns INSUFFICIENT (no score) when a signal's source data is absent:
  *   - |R| = 0, OR
  *   - no OUTCOME-bearing resolved decision (accuracy absent), OR
- *   - no resolved decision reported confidence (confidence absent).
- * (Override and escalation always exist once |R| ≥ 1.)
+ *   - no resolved decision reported confidence (confidence absent), OR
+ *   - no ACCEPTED and no OVERRIDDEN resolved decision (override channel empty).
+ * (Escalation always exists once |R| ≥ 1.)
  */
 export function computeReadiness(decisions: readonly Decision[], asOf: string): ReadinessResult {
   const asOfMs = Date.parse(asOf);
@@ -195,8 +195,12 @@ export function computeReadiness(decisions: readonly Decision[], asOf: string): 
   const missing: ComponentKey[] = [];
   const hasOutcome = resolved.some((d) => d.outcome !== undefined);
   const hasConfidence = resolved.some((d) => d.confidence !== undefined);
+  const hasOverrideChannel = resolved.some(
+    (d) => d.verdict.kind === 'ACCEPTED' || d.verdict.kind === 'OVERRIDDEN',
+  );
   if (!hasOutcome) missing.push('accuracyRate');
   if (!hasConfidence) missing.push('confidenceAvg');
+  if (!hasOverrideChannel) missing.push('overrideRate');
 
   if (missing.length > 0) {
     return { status: 'INSUFFICIENT', missing, eventCount, resolvedCount };

@@ -85,6 +85,18 @@ describe('computeReadiness — WITHHOLD on incomplete signal (Q3)', () => {
     if (r.status === 'INSUFFICIENT') expect(r.missing).toContain('accuracyRate');
   });
 
+  it('empty override channel (only ESCALATED/FAILED) → INSUFFICIENT, not a high score', () => {
+    // Adversarial: no ACCEPTED and no OVERRIDDEN. The old 0/0 → 0 gave full (1−override)
+    // credit — a misleadingly high score. Now the override source is absent → WITHHOLD.
+    const decisions = [
+      ...range(6, () => mkDec({ verdict: { kind: 'ESCALATED' }, confidence: 0.9 })),
+      ...range(6, () => mkDec({ verdict: { kind: 'FAILED' }, outcome: 'FAILURE', confidence: 0.9 })),
+    ];
+    const r = computeReadiness(decisions, ASOF);
+    expect(r.status).toBe('INSUFFICIENT');
+    if (r.status === 'INSUFFICIENT') expect(r.missing).toContain('overrideRate');
+  });
+
   it('|R| = 0 (all PENDING) → INSUFFICIENT, every component missing', () => {
     const decisions = range(12, () => mkDec({ verdict: { kind: 'PENDING' }, confidence: 0.9 }));
     const r = computeReadiness(decisions, ASOF);

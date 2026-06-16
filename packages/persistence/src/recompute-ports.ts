@@ -78,6 +78,7 @@ export function makeRecomputePorts(tx: TenantClient): RecomputePorts {
           effectiveMode: row.effectiveMode,
           consecutivePromotionReady: row.consecutivePromotionReady,
           consecutiveSubFloor: row.consecutiveSubFloor,
+          consecutiveInsufficient: row.consecutiveInsufficient,
           ...(row.pendingToMode !== null
             ? {
                 pendingPromotion: {
@@ -102,6 +103,7 @@ export function makeRecomputePorts(tx: TenantClient): RecomputePorts {
             effectiveMode: state.effectiveMode,
             consecutivePromotionReady: state.consecutivePromotionReady,
             consecutiveSubFloor: state.consecutiveSubFloor,
+            consecutiveInsufficient: state.consecutiveInsufficient,
             pendingToMode: state.pendingPromotion?.toMode ?? null,
             pendingAwaitingApproval: state.pendingPromotion?.awaitingApproval ?? false,
           },

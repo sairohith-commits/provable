@@ -40,6 +40,8 @@ export interface LifecycleState {
   readonly effectiveMode: AutonomyMode;
   readonly consecutivePromotionReady: number;
   readonly consecutiveSubFloor: number;
+  /** Consecutive INSUFFICIENT recomputes while governed — drives signal-loss demotion. */
+  readonly consecutiveInsufficient: number;
   readonly pendingPromotion?: PendingPromotion;
 }
 
@@ -69,6 +71,7 @@ export const INITIAL_LIFECYCLE_STATE: LifecycleState = {
   effectiveMode: 'OBSERVING',
   consecutivePromotionReady: 0,
   consecutiveSubFloor: 0,
+  consecutiveInsufficient: 0,
 };
 
 // ─── band helpers ────────────────────────────────────────────────────────────
@@ -159,10 +162,15 @@ function mkState(
   consecutivePromotionReady: number,
   consecutiveSubFloor: number,
   pendingPromotion?: PendingPromotion,
+  consecutiveInsufficient = 0, // SCORED/safety/observing recomputes reset it (the default)
 ): LifecycleState {
-  return pendingPromotion === undefined
-    ? { effectiveMode, consecutivePromotionReady, consecutiveSubFloor }
-    : { effectiveMode, consecutivePromotionReady, consecutiveSubFloor, pendingPromotion };
+  const base = {
+    effectiveMode,
+    consecutivePromotionReady,
+    consecutiveSubFloor,
+    consecutiveInsufficient,
+  };
+  return pendingPromotion === undefined ? base : { ...base, pendingPromotion };
 }
 
 // ─── the engine ──────────────────────────────────────────────────────────────
@@ -268,11 +276,35 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
     return { transitions, state: mkState('SUSPENDED', 0, 0), effectiveMode: 'SUSPENDED' };
   }
 
-  // 5b) INSUFFICIENT readiness for an operating task → NO score-driven transition.
-  //     The streak counters reset (a gap breaks hysteresis), but a pending promotion
-  //     is preserved (only a human or a safety signal resolves it). Auto-demotion on
-  //     signal loss is a BACKLOG item — deliberately NOT implemented this phase.
+  // 5b) INSUFFICIENT readiness for an operating task. A GOVERNED task (CO_PILOT/SOLO) whose
+  //     signal is lost auto-demotes one band after a grace window (safety-biased, AUTO_APPLIED,
+  //     no approver). SHADOW has nothing to demote — it just holds. The hysteresis streaks
+  //     reset (a gap breaks them); a pending promotion is preserved within grace.
+  //     Trigger reuses the closed DRIFT primitive (a dedicated SIGNAL_LOSS trigger would be a
+  //     contracts/closed-set change — out of scope; flagged as a possible later addition).
   if (readiness.status !== 'SCORED') {
+    if (mode === 'CO_PILOT' || mode === 'SOLO') {
+      const nextInsufficient = state.consecutiveInsufficient + 1;
+      if (nextInsufficient >= policy.signalLossGraceRecomputes) {
+        const target = oneBandDown(mode);
+        transitions.push(
+          mk(
+            target,
+            'DEMOTION',
+            'DRIFT',
+            'AUTO_APPLIED',
+            `signal lost: readiness INSUFFICIENT for ${nextInsufficient} consecutive recomputes`,
+          ),
+        );
+        return { transitions, state: mkState(target, 0, 0), effectiveMode: target };
+      }
+      return {
+        transitions,
+        state: mkState(mode, 0, 0, state.pendingPromotion, nextInsufficient),
+        effectiveMode: mode,
+      };
+    }
+    // SHADOW (lowest operating band) — nothing to demote on signal loss.
     return {
       transitions,
       state: mkState(mode, 0, 0, state.pendingPromotion),

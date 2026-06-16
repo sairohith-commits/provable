@@ -6,8 +6,8 @@
  * and live as `as const` constants in `readiness.ts` — they are NOT part of this
  * policy and are NOT configurable.
  *
- * These three knobs govern the lifecycle's timing only (the asymmetry of
- * promotion vs. demotion), per the Phase-2 proposed defaults.
+ * These knobs govern the lifecycle's timing only (the asymmetry of promotion vs.
+ * demotion), per the Phase-2 proposed defaults.
  */
 export interface GovernancePolicy {
   /**
@@ -29,10 +29,19 @@ export interface GovernancePolicy {
    * (demote on the 2nd). Guardrail and drift ignore this — they are grace-0.
    */
   readonly scoreDropConfirmRecomputes: number;
+
+  /**
+   * Signal-loss demotion grace: a GOVERNED task (CO_PILOT/SOLO) whose readiness is
+   * INSUFFICIENT for this many consecutive recomputes auto-demotes one band. `2` =
+   * 1-confirm (demote on the 2nd), matching the score-drop grace. Safety-biased
+   * (AUTO_APPLIED, no approval). OBSERVING/SHADOW are unaffected.
+   */
+  readonly signalLossGraceRecomputes: number;
 }
 
 export const DEFAULT_GOVERNANCE_POLICY: GovernancePolicy = {
   observingExitMinResolved: 10,
   promotionHysteresisRecomputes: 3,
   scoreDropConfirmRecomputes: 2,
+  signalLossGraceRecomputes: 2,
 };

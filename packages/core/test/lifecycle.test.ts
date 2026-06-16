@@ -52,6 +52,7 @@ const operating = (mode: LifecycleState['effectiveMode']): LifecycleState => ({
   effectiveMode: mode,
   consecutivePromotionReady: 0,
   consecutiveSubFloor: 0,
+  consecutiveInsufficient: 0,
 });
 
 describe('OBSERVING → SHADOW gating', () => {
@@ -135,6 +136,57 @@ describe('WITHHOLD (Q3) — adversarial: no confidence, no autonomy', () => {
       asOf: ASOF,
     });
     expect(r.effectiveMode).toBe('CO_PILOT');
+    expect(r.transitions).toHaveLength(0);
+  });
+});
+
+describe('Signal-loss demotion (grace window) — easy to fall, no approval', () => {
+  it('1 INSUFFICIENT is within grace → no demotion, counter increments', () => {
+    const r = stepLifecycle({ ids, state: operating('SOLO'), readiness: insufficient(), policy, asOf: ASOF });
+    expect(r.effectiveMode).toBe('SOLO');
+    expect(r.transitions).toHaveLength(0);
+    expect(r.state.consecutiveInsufficient).toBe(1);
+  });
+
+  it('2nd consecutive INSUFFICIENT → AUTO_APPLIED demotion one band, counter reset', () => {
+    const run = runLifecycle(
+      ids,
+      operating('CO_PILOT'),
+      [
+        { readiness: insufficient(), asOf: ASOF },
+        { readiness: insufficient(), asOf: ASOF },
+      ],
+      policy,
+    );
+    const demotion = run.transitions.find((t) => t.direction === 'DEMOTION');
+    expect(demotion).toBeDefined();
+    expect(demotion?.status).toBe('AUTO_APPLIED');
+    expect(demotion?.trigger).toBe('DRIFT'); // reused closed trigger (no SIGNAL_LOSS added)
+    expect(demotion?.toMode).toBe('SHADOW'); // one band down from CO_PILOT
+    expect(demotion?.approver).toBeUndefined();
+    expect(run.state.effectiveMode).toBe('SHADOW');
+    expect(run.state.consecutiveInsufficient).toBe(0);
+  });
+
+  it('a SCORED recompute mid-grace resets the counter', () => {
+    const a = stepLifecycle({ ids, state: operating('CO_PILOT'), readiness: insufficient(), policy, asOf: ASOF });
+    expect(a.state.consecutiveInsufficient).toBe(1);
+    const b = stepLifecycle({ ids, state: a.state, readiness: rr(85), policy, asOf: ASOF });
+    expect(b.state.consecutiveInsufficient).toBe(0); // signal returned → reset
+    const c = stepLifecycle({ ids, state: b.state, readiness: insufficient(), policy, asOf: ASOF });
+    expect(c.effectiveMode).toBe('CO_PILOT'); // count is 1 again, not 2 → no demotion
+    expect(c.transitions).toHaveLength(0);
+  });
+
+  it('SHADOW INSUFFICIENT is unaffected (nothing to demote)', () => {
+    const r = stepLifecycle({ ids, state: operating('SHADOW'), readiness: insufficient(), policy, asOf: ASOF });
+    expect(r.effectiveMode).toBe('SHADOW');
+    expect(r.transitions).toHaveLength(0);
+  });
+
+  it('OBSERVING INSUFFICIENT is unaffected (stays OBSERVING)', () => {
+    const r = stepLifecycle({ ids, state: INITIAL_LIFECYCLE_STATE, readiness: insufficient(5), policy, asOf: ASOF });
+    expect(r.effectiveMode).toBe('OBSERVING');
     expect(r.transitions).toHaveLength(0);
   });
 });
