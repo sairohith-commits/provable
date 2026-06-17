@@ -168,10 +168,12 @@ interface Transition {
   orgId: string; agentKey: string; taskKey: string;
   fromMode: Mode; toMode: Mode;
   direction: "PROMOTION" | "DEMOTION" | "LATERAL";
-  trigger:   "SCORE_CROSS" | "DRIFT" | "GUARDRAIL" | "SIGNAL_LOSS" | "MANUAL" | "SCHEDULED";
+  trigger:   "SCORE_CROSS" | "DRIFT" | "GUARDRAIL" | "SIGNAL_LOSS" | "MANUAL_OVERRIDE" | "SCHEDULED";
   // SIGNAL_LOSS: a governed task auto-demotes after its verdict/outcome signal goes absent
   // (readiness INSUFFICIENT for a grace window). Distinct from DRIFT (genuine performance
   // decline) so Legal/audit can tell "we lost visibility" apart from "the agent got worse".
+  // MANUAL_OVERRIDE: carries explicit override semantics defined below (§ The asymmetry).
+  actor?:    string;   // REQUIRED for MANUAL_OVERRIDE — the authorizing human (Owner | Approver)
   status:    "PROPOSED" | "PENDING_APPROVAL" | "APPLIED" | "AUTO_APPLIED" | "REJECTED";
   approver?: string;   // REQUIRED for PROMOTION
   reason:    string;   // evidence: score delta, drift metric, guardrail id
@@ -181,14 +183,32 @@ interface Transition {
 
 ### The asymmetry (the whole governance value)
 
-- **Promotion** (toward more autonomy): score must cross the upper threshold **and sustain
-  it** (hysteresis — N sustained decisions/days), then it is *proposed* and **requires human
-  approval** before `APPLIED`. Deliberate, gated, signed.
-- **Demotion** (toward less autonomy): the instant score drops below threshold, or drift /
-  a guardrail trips → **`AUTO_APPLIED`, no approval.** Safety-biased.
+Mode changes **upward** via exactly two paths:
+
+- **(a) Earned promotion** — trigger `SCORE_CROSS`. Requires score crossing **+** sustained
+  hysteresis (N sustained decisions/days) **+** human approval. Status
+  `PROPOSED → PENDING_APPROVAL → APPLIED`; `approver` **REQUIRED**. This is the earned ladder
+  and is **UNCHANGED**. Deliberate, gated, signed.
+- **(b) Manual override** — trigger `MANUAL_OVERRIDE`. An authorized human (**Owner or
+  Approver only**) sets **ANY** mode directly, regardless of score or hysteresis. Applied
+  immediately on the human's authority; `actor` and `reason` **REQUIRED**. The earned score
+  is **NEVER** touched — override sets `effectiveMode` only. Machine keys can never issue this.
+
+**Demotion** remains automatic and universal: trigger `DRIFT | GUARDRAIL | SIGNAL_LOSS |
+SCORE_CROSS(down)` → **`AUTO_APPLIED` instantly, no approval**, for **EVERY** agent including
+manually-set ones. Override is **NOT** a safety off-switch.
 
 Easy to fall, hard to climb. **Auto-demotion** is the marquee differentiator and only exists
 because the lifecycle is a real state machine, not `mode = f(score)`.
+
+### Standing divergence (override above earned band)
+
+A manually-set mode sitting **above** its earned band is a **STANDING DIVERGENCE**: surfaced
+as a first-class governance signal (governed mode vs score-implied band), **not
+auto-corrected**. Auto-demotion fires only on a **NEW adverse event** — a guardrail trip,
+detected drift, or a fresh score **DECLINE** — never merely because the earned score is below
+a manually-set mode. Override accepts a *known* gap; it does not silence *new* danger. (The
+score demotion trigger is a **regression check**, NOT a static `score < band` check.)
 
 ### Lifecycle inputs
 
@@ -196,7 +216,8 @@ because the lifecycle is a real state machine, not `mode = f(score)`.
 - **Drift** — sustained negative deviation from baseline → demotion or flag.
 - **Guardrails** — a pre-action gate trip → immediate `SUSPENDED` / demotion.
 - **Hysteresis window** — prevents flapping at band edges.
-- **Manual / scheduled** — operator overrides; planned retirement.
+- **Manual override / scheduled** — `MANUAL_OVERRIDE` (Owner/Approver sets mode directly,
+  with explicit override semantics — see § The asymmetry); planned retirement.
 
 ### Retirement
 
@@ -209,6 +230,17 @@ Terminal, audited transition.
 `core/readiness` **computes**; `core/lifecycle` **governs**. The lifecycle engine consumes
 `score + drift + guardrail + approval` and manages `effectiveMode` via `Transition`s. No
 domain term appears in either.
+
+### Unchanged invariants
+
+Manual override changes *who can set a mode upward* — it does not weaken anything below:
+
+- **Scores are earned, never adjusted.** The readiness formula is the locked single source of
+  truth; `MANUAL_OVERRIDE` touches `effectiveMode` only.
+- **Every transition** (including `MANUAL_OVERRIDE`) is **first-class, immutable, and audited.**
+- **Auto-demotion is automatic, instant, and applies regardless of how the current mode was
+  set** — a manually-set mode demotes on a new adverse event exactly like an earned one.
+- **The automatic path stays asymmetric:** the system **auto-demotes but never auto-promotes.**
 
 ---
 
