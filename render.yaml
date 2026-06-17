@@ -12,7 +12,7 @@ services:
     plan: free
     region: oregon
     buildCommand: "pnpm install --frozen-lockfile && pnpm --filter @provable/api... build"
-    startCommand: "pnpm exec prisma migrate deploy --schema packages/persistence/prisma/schema.prisma && node apps/api/dist/server.js"
+    startCommand: "pnpm --filter @provable/persistence exec prisma migrate deploy && node apps/api/dist/server.js"
     healthCheckPath: /health
     envVars:
       # DATABASE_URL = provable_app role (RLS-enforced) — the app runtime connection.
