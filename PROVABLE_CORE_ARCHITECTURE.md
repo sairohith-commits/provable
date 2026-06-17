@@ -168,7 +168,10 @@ interface Transition {
   orgId: string; agentKey: string; taskKey: string;
   fromMode: Mode; toMode: Mode;
   direction: "PROMOTION" | "DEMOTION" | "LATERAL";
-  trigger:   "SCORE_CROSS" | "DRIFT" | "GUARDRAIL" | "MANUAL" | "SCHEDULED";
+  trigger:   "SCORE_CROSS" | "DRIFT" | "GUARDRAIL" | "SIGNAL_LOSS" | "MANUAL" | "SCHEDULED";
+  // SIGNAL_LOSS: a governed task auto-demotes after its verdict/outcome signal goes absent
+  // (readiness INSUFFICIENT for a grace window). Distinct from DRIFT (genuine performance
+  // decline) so Legal/audit can tell "we lost visibility" apart from "the agent got worse".
   status:    "PROPOSED" | "PENDING_APPROVAL" | "APPLIED" | "AUTO_APPLIED" | "REJECTED";
   approver?: string;   // REQUIRED for PROMOTION
   reason:    string;   // evidence: score delta, drift metric, guardrail id

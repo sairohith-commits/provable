@@ -28,3 +28,17 @@ export { makeRecomputePorts } from './recompute-ports.js';
 export type { RecomputePorts } from './recompute-ports.js';
 export { resolveOrgByApiKey, resolveOrgByClerkOrgId } from './auth.js';
 export { provisionOrg, linkClerkOrg } from './provision.js';
+export { readModelRepo } from './read-models.js';
+export type {
+  RegistryView,
+  RegistryAgentRow,
+  VisibilityView,
+  VisibilityRow,
+  VerdictMix,
+  ScoreComponents,
+  ScoreTrendPoint,
+  CostView,
+  CostRow,
+  SafetyView,
+  SuspendedTask,
+} from './read-models.js';

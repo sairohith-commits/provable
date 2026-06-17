@@ -35,6 +35,7 @@ export const TRANSITION_TRIGGERS = [
   'SCORE_CROSS',
   'DRIFT',
   'GUARDRAIL',
+  'SIGNAL_LOSS',
   'MANUAL',
   'SCHEDULED',
 ] as const;

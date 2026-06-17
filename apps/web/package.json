@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json --noEmit",
     "build:next": "next build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo \"web e2e is Playwright (needs Clerk dev keys); see e2e/\" && exit 0",
+    "test": "vitest run",
     "e2e": "playwright test"
   },
   "dependencies": {

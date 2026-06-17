@@ -66,7 +66,7 @@ describe('Signal-loss demotion — e2e over HTTP', () => {
     expect(second.effectiveMode).toBe('SHADOW');
     const demotion = second.transitions.find((t) => t.direction === 'DEMOTION');
     expect(demotion?.status).toBe('AUTO_APPLIED');
-    expect(demotion?.trigger).toBe('DRIFT');
+    expect(demotion?.trigger).toBe('SIGNAL_LOSS'); // ratified: distinct from DRIFT through the live path
     expect(demotion?.toMode).toBe('SHADOW');
     expect(demotion?.approver).toBeUndefined();
   });

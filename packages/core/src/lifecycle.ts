@@ -280,8 +280,8 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
   //     signal is lost auto-demotes one band after a grace window (safety-biased, AUTO_APPLIED,
   //     no approver). SHADOW has nothing to demote — it just holds. The hysteresis streaks
   //     reset (a gap breaks them); a pending promotion is preserved within grace.
-  //     Trigger reuses the closed DRIFT primitive (a dedicated SIGNAL_LOSS trigger would be a
-  //     contracts/closed-set change — out of scope; flagged as a possible later addition).
+  //     Emits the dedicated SIGNAL_LOSS trigger (ratified addition to the closed trigger set):
+  //     Legal/audit must distinguish a lost signal from genuine performance DRIFT.
   if (readiness.status !== 'SCORED') {
     if (mode === 'CO_PILOT' || mode === 'SOLO') {
       const nextInsufficient = state.consecutiveInsufficient + 1;
@@ -291,7 +291,7 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
           mk(
             target,
             'DEMOTION',
-            'DRIFT',
+            'SIGNAL_LOSS',
             'AUTO_APPLIED',
             `signal lost: readiness INSUFFICIENT for ${nextInsufficient} consecutive recomputes`,
           ),

@@ -41,6 +41,7 @@
     "SCORE_CROSS",
     "DRIFT",
     "GUARDRAIL",
+    "SIGNAL_LOSS",
     "MANUAL",
     "SCHEDULED"
   ],

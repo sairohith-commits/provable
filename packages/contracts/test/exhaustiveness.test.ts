@@ -95,6 +95,8 @@ function describeTrigger(t: TransitionTrigger): string {
       return 'drift';
     case 'GUARDRAIL':
       return 'guardrail';
+    case 'SIGNAL_LOSS':
+      return 'signal_loss';
     case 'MANUAL':
       return 'manual';
     case 'SCHEDULED':

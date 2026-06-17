@@ -1,13 +1,13 @@
 import { Show } from '@clerk/nextjs';
-import { getAgents, getTransitions } from '@/lib/api';
+import { loadOverview } from '@/lib/overview';
 import { activeProvableOrg } from '@/lib/org';
 import { OverviewClient } from '@/components/overview-client';
 
 export const dynamic = 'force-dynamic';
 
 async function Overview({ orgId }: { orgId: string }) {
-  const [agents, transitions] = await Promise.all([getAgents(orgId), getTransitions(orgId)]);
-  return <OverviewClient initial={{ agents, transitions }} />;
+  const initial = await loadOverview(orgId);
+  return <OverviewClient initial={initial} />;
 }
 
 export default async function Page() {

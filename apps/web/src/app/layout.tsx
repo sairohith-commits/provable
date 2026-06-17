@@ -24,6 +24,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </div>
             <div className="chrome-right">
               <Show when="signed-in">
+                <a className="nav-link" href="/">
+                  Overview
+                </a>
+                <a className="nav-link" href="/connect">
+                  Connect
+                </a>
                 <OrganizationSwitcher hidePersonal />
                 <UserButton />
               </Show>

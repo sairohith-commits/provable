@@ -4,12 +4,16 @@ import type { TaskScope } from '@provable/core';
 import {
   agentRepo,
   makeRecomputePorts,
+  orgRepo,
+  readModelRepo,
   resolveOrgByClerkOrgId,
   scoreRepo,
   taskRepo,
   transitionRepo,
   withTenant,
 } from '@provable/persistence';
+import { generateApiKey } from './auth.js';
+import { deriveIdentityState, deriveRoi, IDENTITY_POLICY } from './views.js';
 import Fastify from 'fastify';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -160,6 +164,105 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     if (orgId === null) return;
     const transitions = await withTenant(orgId, (tx) => transitionRepo.list(tx));
     return reply.send({ transitions });
+  });
+
+  // ── Pillar read-models (internal OR machine-key) ────────────────────────────
+  // Identity & Registry: identity state (DERIVED from real activity), first/last-seen,
+  // provenance sources, task count.
+  app.get('/registry', async (req, reply) => {
+    const orgId = await requireReadOrg(req, reply);
+    if (orgId === null) return;
+    const asOf = new Date().toISOString();
+    const view = await withTenant(orgId, (tx) => readModelRepo.registry(tx));
+    const agents = view.agents.map((a) => ({
+      ...a,
+      identityState: deriveIdentityState(a, asOf),
+    }));
+    return reply.send({ agents, policy: IDENTITY_POLICY });
+  });
+
+  // Visibility & Intelligence: per agent×task verdict mix, volumes, window rates +
+  // readiness components, and the score trend (the only drift signal core computes).
+  app.get('/visibility', async (req, reply) => {
+    const orgId = await requireReadOrg(req, reply);
+    if (orgId === null) return;
+    const asOf = new Date().toISOString();
+    const view = await withTenant(orgId, (tx) => readModelRepo.visibility(tx, asOf));
+    return reply.send(view);
+  });
+
+  // Cost & ROI: REAL cost aggregates + a DERIVED ROI/shadow-counterfactual projection that
+  // always travels with its assumptions (ROI-integrity: no savings figure without inputs).
+  app.get('/cost', async (req, reply) => {
+    const orgId = await requireReadOrg(req, reply);
+    if (orgId === null) return;
+    const cost = await withTenant(orgId, (tx) => readModelRepo.cost(tx));
+    const shadowDecisionVolume = cost.tasks
+      .filter((t) => t.effectiveMode === 'SHADOW')
+      .reduce((sum, t) => sum + t.decisionCount, 0);
+    const roi = deriveRoi(cost, shadowDecisionVolume);
+    return reply.send({ ...cost, roi });
+  });
+
+  // Guardrails & Safety: safety-triggered auto-demotions (GUARDRAIL + SIGNAL_LOSS) with
+  // their tripping context, plus currently SUSPENDED tasks. Empty until something trips.
+  app.get('/guardrails', async (req, reply) => {
+    const orgId = await requireReadOrg(req, reply);
+    if (orgId === null) return;
+    const view = await withTenant(orgId, (tx) => readModelRepo.safety(tx));
+    return reply.send(view);
+  });
+
+  // KPI summary: composed REAL counts + the ROI projection (assumptions attached). Honest
+  // zeros on a fresh org; the api key PREFIX (lookup handle, not the secret) for the Connect view.
+  app.get('/summary', async (req, reply) => {
+    const orgId = await requireReadOrg(req, reply);
+    if (orgId === null) return;
+    const asOf = new Date().toISOString();
+    const { registry, cost, safety, pendingApprovals, apiKeyPrefix } = await withTenant(
+      orgId,
+      async (tx) => ({
+        registry: await readModelRepo.registry(tx),
+        cost: await readModelRepo.cost(tx),
+        safety: await readModelRepo.safety(tx),
+        pendingApprovals: await readModelRepo.pendingApprovalCount(tx),
+        apiKeyPrefix: await readModelRepo.apiKeyPrefix(tx, orgId),
+      }),
+    );
+    const activeAgents = registry.agents.filter(
+      (a) => deriveIdentityState(a, asOf) === 'ACTIVE',
+    ).length;
+    const shadowDecisionVolume = cost.tasks
+      .filter((t) => t.effectiveMode === 'SHADOW')
+      .reduce((sum, t) => sum + t.decisionCount, 0);
+    const roi = deriveRoi(cost, shadowDecisionVolume);
+    return reply.send({
+      activeAgents,
+      agentsTotal: registry.agents.length,
+      pendingApprovals,
+      suspendedCount: safety.suspended.length,
+      guardrailEventCount: safety.events.length,
+      decisionCount: cost.org.decisionCount,
+      tokenSpend: cost.org.tokens,
+      usdSpend: cost.org.usd,
+      hasCostSignal: cost.org.hasCostSignal,
+      roi,
+      apiKeyPrefix,
+    });
+  });
+
+  // ── Clerk-authed machine-key ROTATE (the SAME human/internal path as approve) ────────
+  // Mints a new key, replaces the org's hash+prefix, returns the plaintext ONCE. The old
+  // key dies immediately. A MACHINE KEY CANNOT reach this — there is no internal context.
+  app.post('/org/api-key/rotate', async (req, reply) => {
+    const internal = resolveInternal(headersOf(req));
+    if (internal === null) {
+      return reply.code(401).send({ error: 'internal auth required' });
+    }
+    const orgId = internal.orgId;
+    const k = generateApiKey();
+    await withTenant(orgId, (tx) => orgRepo.setApiKey(tx, orgId, k.prefix, k.hash));
+    return reply.send({ key: k.key, prefix: k.prefix }); // shown ONCE; never stored in clear
   });
 
   // ── Clerk org → Provable org resolve (internal token only; no org id needed) ──

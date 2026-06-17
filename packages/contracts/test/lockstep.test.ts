@@ -75,6 +75,7 @@ describe('as-const arrays stay in lockstep with their derived unions', () => {
       'SCORE_CROSS',
       'DRIFT',
       'GUARDRAIL',
+      'SIGNAL_LOSS',
       'MANUAL',
       'SCHEDULED',
     ]);

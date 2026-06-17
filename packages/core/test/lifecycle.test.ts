@@ -161,11 +161,13 @@ describe('Signal-loss demotion (grace window) — easy to fall, no approval', ()
     const demotion = run.transitions.find((t) => t.direction === 'DEMOTION');
     expect(demotion).toBeDefined();
     expect(demotion?.status).toBe('AUTO_APPLIED');
-    expect(demotion?.trigger).toBe('DRIFT'); // reused closed trigger (no SIGNAL_LOSS added)
+    expect(demotion?.trigger).toBe('SIGNAL_LOSS'); // ratified dedicated trigger (distinct from DRIFT)
     expect(demotion?.toMode).toBe('SHADOW'); // one band down from CO_PILOT
-    expect(demotion?.approver).toBeUndefined();
+    expect(demotion?.approver).toBeUndefined(); // asymmetry: auto-demotion needs no approver
     expect(run.state.effectiveMode).toBe('SHADOW');
     expect(run.state.consecutiveInsufficient).toBe(0);
+    // Adversarial: signal-loss must NOT masquerade as performance drift (Legal distinguishes them).
+    expect(demotion?.trigger).not.toBe('DRIFT');
   });
 
   it('a SCORED recompute mid-grace resets the counter', () => {

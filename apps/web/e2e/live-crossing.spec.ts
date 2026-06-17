@@ -69,11 +69,42 @@ test('climb → reads render real data → human approves → approver named in 
   await expect(page.locator('.ladder').first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Governance' })).toBeVisible();
 
+  // All 5 pillars render (real data, no mock).
+  for (const section of ['readiness', 'governance', 'visibility', 'cost', 'guardrails', 'registry']) {
+    await expect(page.locator(`[data-section="${section}"]`)).toBeVisible();
+  }
+
+  // Guardrails render REAL safety events (seeded): a GUARDRAIL trip and a SIGNAL_LOSS demotion.
+  const guardrails = page.locator('[data-section="guardrails"]');
+  await expect(guardrails.locator('[data-trigger="GUARDRAIL"]').first()).toBeVisible();
+  await expect(guardrails.locator('[data-trigger="SIGNAL_LOSS"]').first()).toBeVisible();
+
+  // ROI integrity: the savings figure renders WITH its assumptions, labeled a projection.
+  await expect(page.locator('.roi[data-projection="true"] .roi-figure')).toBeVisible();
+  await expect(page.locator('.roi .roi-assumptions')).toBeVisible();
+
+  // The two-marker ladder renders the asymmetry: classify has a gap (Co-Pilot vs Solo).
+  await expect(page.locator('.marker-effective').first()).toBeVisible();
+  await expect(page.locator('.marker-implied').first()).toBeVisible();
+
+  // Persona lens reorders the SAME data: count agents, switch to Legal, re-count → unchanged.
+  const agentCountBefore = await page.locator('[data-section="readiness"] .agent-row').count();
+  await page.locator('button[data-persona="Legal"]').click();
+  // Legal leads with the governance/audit feed.
+  const firstSection = await page.locator('.pillar').first().getAttribute('data-section');
+  expect(firstSection).toBe('governance');
+  const agentCountAfter = await page.locator('[data-section="readiness"] .agent-row').count();
+  expect(agentCountAfter).toBe(agentCountBefore); // lens reorders, never invents/drops data
+
   // A PENDING_APPROVAL promotion (driven by the deterministic climb) → an Approve button.
+  await page.locator('button[data-persona="All"]').click();
   const approve = page.getByRole('button', { name: /approve promotion/i }).first();
   await expect(approve).toBeVisible();
   await approve.click();
 
-  // After approval the immutable trail names the signed-in human as approver.
-  await expect(page.locator('.t-approver').first()).toBeVisible({ timeout: 15_000 });
+  // After approval the immutable trail names the signed-in human as approver (a human name,
+  // not a raw user_ id — Readiness fix #2).
+  const approver = page.locator('.t-approver').first();
+  await expect(approver).toBeVisible({ timeout: 15_000 });
+  await expect(approver).not.toContainText('user_');
 });
