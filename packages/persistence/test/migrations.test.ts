@@ -8,7 +8,12 @@ afterAll(async () => {
 });
 
 describe('Migrations apply clean on a fresh DB', () => {
-  it('all 7 tables exist with RLS enabled AND forced', async () => {
+  it('all 7 tables have RLS ENABLED (Neon-compat: not FORCEd — owner bypass needed for SECURITY DEFINER auth)', async () => {
+    // FORCE was relaxed to ENABLE in 20260618000000_neon_compat_no_force_rls so the cross-tenant
+    // SECURITY DEFINER auth lookups work on a host with no superuser (Neon): there the table owner
+    // is a normal role, and under FORCE it would be RLS-scoped and break auth. The app role
+    // `provable_app` is a NON-owner with no BYPASSRLS, so RLS still fully isolates it under ENABLE
+    // (proven in rls-isolation.test). FORCE only mattered for an owner-connection the app never makes.
     const rows = await adminClient.$queryRawUnsafe<
       { relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }[]
     >(
@@ -20,8 +25,8 @@ describe('Migrations apply clean on a fresh DB', () => {
     );
     expect(rows).toHaveLength(7);
     for (const r of rows) {
-      expect(r.relrowsecurity).toBe(true);
-      expect(r.relforcerowsecurity).toBe(true);
+      expect(r.relrowsecurity).toBe(true); // RLS enabled
+      expect(r.relforcerowsecurity).toBe(false); // NOT forced (owner bypass; app role stays scoped)
     }
   });
 

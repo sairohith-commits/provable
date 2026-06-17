@@ -65,6 +65,10 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
 
   const headersOf = (req: FastifyRequest) => req.headers as Record<string, unknown>;
 
+  // Liveness probe for the platform health check (Render). Unauthenticated, no DB touch —
+  // it answers "is the process up and serving?", nothing tenant-scoped.
+  app.get('/health', async () => ({ status: 'ok' }));
+
   /** Machine-key only (ingestion: /register, /track). Internal token is NOT honored here. */
   async function requireMachineOrg(req: FastifyRequest, reply: FastifyReply): Promise<OrgId | null> {
     const orgId = await authenticate(extractKey(headersOf(req)));

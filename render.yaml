@@ -1,0 +1,26 @@
+# Render blueprint for the Provable API (apps/api) from this pnpm/Turbo monorepo.
+# Build compiles api + its workspace deps (contracts, core, persistence); persistence's
+# build runs `prisma generate`. On start it applies pending migrations against the DIRECT
+# (non-pooled) Neon URL, then boots Fastify. Health check hits /health.
+#
+# NOTE: Render injects PORT — server.ts already listens on process.env.PORT / 0.0.0.0.
+# Set DATABASE_URL, DIRECT_URL and PROVABLE_INTERNAL_TOKEN in the dashboard (sync:false).
+services:
+  - type: web
+    name: provable-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @provable/api... build"
+    startCommand: "pnpm exec prisma migrate deploy --schema packages/persistence/prisma/schema.prisma && node apps/api/dist/server.js"
+    healthCheckPath: /health
+    envVars:
+      # DATABASE_URL = provable_app role (RLS-enforced) — the app runtime connection.
+      - key: DATABASE_URL
+        sync: false
+      # DIRECT_URL = Neon DIRECT (non-pooled) owner connection — migrations only.
+      - key: DIRECT_URL
+        sync: false
+      # MUST equal the value set on Vercel (web↔api internal auth). Generate a strong one.
+      - key: PROVABLE_INTERNAL_TOKEN
+        sync: false
