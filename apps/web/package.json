@@ -15,7 +15,10 @@
   "dependencies": {
     "@clerk/nextjs": "^7.5.3",
     "@provable/contracts": "workspace:*",
+    "bcryptjs": "^3.0.3",
+    "jose": "^6.2.3",
     "next": "^16.2.9",
+    "openid-client": "^6.8.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^3.8.1",

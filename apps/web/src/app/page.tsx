@@ -1,31 +1,24 @@
-import { Show } from '@clerk/nextjs';
 import { loadOverview } from '@/lib/overview';
-import { activeProvableOrg } from '@/lib/org';
+import { getAuthState } from '@/lib/auth';
 import { OverviewClient } from '@/components/overview-client';
 
 export const dynamic = 'force-dynamic';
 
-async function Overview({ orgId }: { orgId: string }) {
-  const initial = await loadOverview(orgId);
-  return <OverviewClient initial={initial} />;
-}
-
+// Provider-agnostic three-way gate (same states the Clerk UI showed before): signed-out →
+// sign-in prompt; authenticated-but-no-org (Clerk multi-tenant) → not-linked prompt; otherwise
+// the live overview.
 export default async function Page() {
-  const orgId = await activeProvableOrg();
-  return (
-    <>
-      <Show when="signed-out">
-        <div className="empty card glass">Sign in to view your organization’s agents.</div>
-      </Show>
-      <Show when="signed-in">
-        {orgId === null ? (
-          <div className="empty card glass">
-            No Provable org is linked to this Clerk organization yet.
-          </div>
-        ) : (
-          <Overview orgId={orgId} />
-        )}
-      </Show>
-    </>
-  );
+  const state = await getAuthState();
+  if (state.status === 'signed-out') {
+    return <div className="empty card glass">Sign in to view your organization’s agents.</div>;
+  }
+  if (state.status === 'no-org') {
+    return (
+      <div className="empty card glass">
+        No Provable org is linked to this Clerk organization yet.
+      </div>
+    );
+  }
+  const initial = await loadOverview(state.context.orgId);
+  return <OverviewClient initial={initial} />;
 }
