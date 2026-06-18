@@ -12,7 +12,9 @@ services:
     plan: free
     region: oregon
     buildCommand: "pnpm install --frozen-lockfile && pnpm --filter @provable/api... build"
-    startCommand: "pnpm --filter @provable/persistence exec prisma migrate deploy && node apps/api/dist/server.js"
+    # migrate → idempotent owner-seed (gate 2) → serve. owner-seed no-ops if BOOTSTRAP_OWNER_EMAIL
+    # is unset, so it never breaks a deploy, and is safe to re-run on every deploy.
+    startCommand: "pnpm --filter @provable/persistence exec prisma migrate deploy && node scripts/owner-seed.mjs && node apps/api/dist/server.js"
     healthCheckPath: /health
     envVars:
       # DATABASE_URL = provable_app role (RLS-enforced) — the app runtime connection.
@@ -23,4 +25,11 @@ services:
         sync: false
       # MUST equal the value set on Vercel (web↔api internal auth). Generate a strong one.
       - key: PROVABLE_INTERNAL_TOKEN
+        sync: false
+      # Gate 2 owner-seed (set in the dashboard). Owner is ensured idempotently on each deploy;
+      # unset BOOTSTRAP_OWNER_EMAIL → the seed step is a no-op. For the live org: set
+      # BOOTSTRAP_OWNER_ORG=org_support and BOOTSTRAP_OWNER_EMAIL=<owner email>.
+      - key: BOOTSTRAP_OWNER_ORG
+        sync: false
+      - key: BOOTSTRAP_OWNER_EMAIL
         sync: false
