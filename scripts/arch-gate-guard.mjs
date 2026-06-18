@@ -53,6 +53,24 @@ const cases = [
     code: `import { withTenant } from '@provable/persistence';\nexport const _guard = withTenant;\n`,
     expectRules: ['web-only-contracts'],
   },
+  {
+    name: 'adapters → persistence',
+    dir: 'packages/adapters/src',
+    code: `import { withTenant } from '@provable/persistence';\nexport const _guard = withTenant;\n`,
+    expectRules: ['adapters-only-contracts'],
+  },
+  {
+    name: 'adapters → api (apps)',
+    dir: 'packages/adapters/src',
+    code: `import { buildApp } from '@provable/api';\nexport const _guard = buildApp;\n`,
+    expectRules: ['adapters-only-contracts', 'nothing-imports-apps'],
+  },
+  {
+    name: 'core → adapters (the inversion must hold)',
+    dir: 'packages/core/src',
+    code: `import { eventsConnector } from '@provable/adapters';\nexport const _guard = eventsConnector;\n`,
+    expectRules: ['core-src-only-contracts', 'core-no-adapters-or-apps'],
+  },
 ];
 
 /** Cruise the given (already-quoted) path args; return { exitCode, output }. */

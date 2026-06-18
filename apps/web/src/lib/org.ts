@@ -1,23 +1,23 @@
 import 'server-only';
 
-import { auth } from '@clerk/nextjs/server';
-import { resolveOrg } from './api';
+import { getAuthState } from './auth';
 
 /**
- * Resolve the active Provable org from the VERIFIED Clerk session, server-side.
- * The Clerk org id comes from the session (never client input); we map it to the
- * Provable org via the read API. Returns null when signed out or no org is linked.
+ * Resolve the active Provable org for the current request, provider-agnostically. The orgId
+ * comes from the selected AuthProvider's verified context (Clerk session → mapped Provable org;
+ * oidc/local → the instance's single workspace org). Returns null when signed out or no org.
+ *
+ * The downstream HTTP contract to the read API is UNCHANGED — callers still forward this orgId
+ * over the internal-token channel exactly as before.
  */
 export async function activeProvableOrg(): Promise<string | null> {
-  const { orgId: clerkOrgId } = await auth();
-  if (!clerkOrgId) return null;
-  return resolveOrg(clerkOrgId);
+  const state = await getAuthState();
+  return state.status === 'authenticated' ? state.context.orgId : null;
 }
 
-/** The authenticated human who will be recorded as the approver. */
+/** The authenticated human who will be recorded as the approver (email, falling back to id). */
 export async function currentApprover(): Promise<string | null> {
-  const { userId, sessionClaims } = await auth();
-  if (!userId) return null;
-  const email = (sessionClaims as { email?: string } | null)?.email;
-  return email ?? userId;
+  const state = await getAuthState();
+  if (state.status !== 'authenticated') return null;
+  return state.context.email ?? state.context.userId;
 }

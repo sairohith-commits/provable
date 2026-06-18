@@ -19,6 +19,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@provable/adapters": "workspace:*",
     "@provable/contracts": "workspace:*",
     "@provable/core": "workspace:*",
     "@provable/persistence": "workspace:*",

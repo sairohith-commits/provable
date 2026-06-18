@@ -36,7 +36,7 @@ export const TRANSITION_TRIGGERS = [
   'DRIFT',
   'GUARDRAIL',
   'SIGNAL_LOSS',
-  'MANUAL',
+  'MANUAL_OVERRIDE',
   'SCHEDULED',
 ] as const;
 export type TransitionTrigger = (typeof TRANSITION_TRIGGERS)[number];
@@ -73,7 +73,8 @@ export interface Transition {
   direction: TransitionDirection;
   trigger: TransitionTrigger;
   status: TransitionStatus;
-  approver?: string; // REQUIRED for an APPLIED promotion — enforced by core/lifecycle
-  reason: string; // evidence: score delta, drift metric, guardrail id
+  approver?: string; // REQUIRED for an APPLIED EARNED promotion (trigger SCORE_CROSS) — core/lifecycle
+  actor?: string; // REQUIRED for MANUAL_OVERRIDE — the authorizing human (Owner/Approver). Distinct from approver.
+  reason: string; // evidence: score delta, drift metric, guardrail id, or override rationale
   at: string;
 }

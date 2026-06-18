@@ -1,35 +1,40 @@
-import { Show } from '@clerk/nextjs';
+import type { Role } from '@provable/contracts';
 import { getSummary, publicApiUrl } from '@/lib/api';
-import { activeProvableOrg } from '@/lib/org';
+import { getAuthState } from '@/lib/auth';
 import { ConnectClient } from '@/components/connect-client';
 
 export const dynamic = 'force-dynamic';
 
-async function ConnectInner({ orgId }: { orgId: string }) {
-  const summary = await getSummary(orgId);
+async function ConnectInner({ orgId, subject, role }: { orgId: string; subject: string; role: Role }) {
+  const summary = await getSummary(orgId, subject);
   return (
     <ConnectClient
       apiUrl={publicApiUrl()}
       keyPrefix={summary.apiKeyPrefix}
       initialAgentCount={summary.agentsTotal}
+      role={role}
     />
   );
 }
 
 export default async function ConnectPage() {
-  const orgId = await activeProvableOrg();
-  return (
-    <>
-      <Show when="signed-out">
-        <div className="empty card glass">Sign in to connect an agent.</div>
-      </Show>
-      <Show when="signed-in">
-        {orgId === null ? (
-          <div className="empty card glass">No Provable org is linked to this Clerk organization yet.</div>
-        ) : (
-          <ConnectInner orgId={orgId} />
-        )}
-      </Show>
-    </>
-  );
+  const state = await getAuthState();
+  if (state.status === 'signed-out') {
+    return <div className="empty card glass">Sign in to connect an agent.</div>;
+  }
+  if (state.status === 'no-org') {
+    return (
+      <div className="empty card glass">
+        No Provable org is linked to this Clerk organization yet.
+      </div>
+    );
+  }
+  if (state.status === 'no-access') {
+    return (
+      <div className="empty card glass">
+        Your account isn’t assigned to this workspace yet. Ask an Owner to grant you access.
+      </div>
+    );
+  }
+  return <ConnectInner orgId={state.context.orgId} subject={state.context.userId} role={state.context.role} />;
 }

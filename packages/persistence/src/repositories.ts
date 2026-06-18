@@ -49,6 +49,13 @@ export const orgRepo = {
   },
 };
 
+export interface AgentRecord {
+  agentKey: AgentKey;
+  displayName: string | null;
+  identityState: AgentIdentityState;
+  createdAt: string;
+}
+
 export const agentRepo = {
   async ensure(
     tx: TenantClient,
@@ -61,6 +68,124 @@ export const agentRepo = {
       create: { orgId, agentKey, ...(identityState !== undefined ? { identityState } : {}) },
       update: {},
     });
+  },
+
+  async find(tx: TenantClient, orgId: OrgId, agentKey: AgentKey): Promise<AgentRecord | null> {
+    const a = await tx.agent.findUnique({ where: { orgId_agentKey: { orgId, agentKey } } });
+    return a === null
+      ? null
+      : {
+          agentKey: a.agentKey as AgentKey,
+          displayName: a.displayName,
+          identityState: a.identityState,
+          createdAt: a.createdAt.toISOString(),
+        };
+  },
+
+  async list(tx: TenantClient, orgId: OrgId): Promise<AgentRecord[]> {
+    const rows = await tx.agent.findMany({ where: { orgId }, orderBy: { agentKey: 'asc' } });
+    return rows.map((a) => ({
+      agentKey: a.agentKey as AgentKey,
+      displayName: a.displayName,
+      identityState: a.identityState,
+      createdAt: a.createdAt.toISOString(),
+    }));
+  },
+
+  /** Rename = set the human-friendly displayName (agentKey is immutable). */
+  async setDisplayName(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: AgentKey,
+    displayName: string,
+  ): Promise<void> {
+    await tx.agent.update({ where: { orgId_agentKey: { orgId, agentKey } }, data: { displayName } });
+  },
+
+  /** Write the authoritative identity state (admin transitions go through core's machine). */
+  async setIdentityState(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: AgentKey,
+    identityState: AgentIdentityState,
+  ): Promise<void> {
+    await tx.agent.update({ where: { orgId_agentKey: { orgId, agentKey } }, data: { identityState } });
+  },
+
+  /**
+   * First-contact activation: DISCOVERED → ACTIVE on real activity. Deliberately advances ONLY
+   * from DISCOVERED — an admin-DORMANT or RETIRED agent keeps recording decisions but its state
+   * does NOT auto-revive (telemetry is never dropped; the admin decision is authoritative).
+   */
+  async markActiveOnFirstContact(tx: TenantClient, orgId: OrgId, agentKey: AgentKey): Promise<void> {
+    await tx.agent.updateMany({
+      where: { orgId, agentKey, identityState: 'DISCOVERED' },
+      data: { identityState: 'ACTIVE' },
+    });
+  },
+};
+
+export interface ApiKeyRow {
+  prefix: string;
+  label: string | null;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+export const apiKeyRepo = {
+  /** Mint an org-scoped key row (the plaintext is shown once by the caller; never stored). */
+  async mint(
+    tx: TenantClient,
+    orgId: OrgId,
+    prefix: string,
+    hash: string,
+    label?: string,
+  ): Promise<void> {
+    await tx.apiKey.create({
+      data: { orgId, prefix, hash, ...(label !== undefined ? { label } : {}) },
+    });
+  },
+
+  /** Active (non-revoked) keys for the org, newest first. */
+  async listActive(tx: TenantClient, orgId: OrgId): Promise<ApiKeyRow[]> {
+    const rows = await tx.apiKey.findMany({
+      where: { orgId, revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((k) => ({
+      prefix: k.prefix,
+      label: k.label,
+      createdAt: k.createdAt.toISOString(),
+      revokedAt: k.revokedAt === null ? null : k.revokedAt.toISOString(),
+    }));
+  },
+
+  /** Soft-revoke a key by prefix (immediate: auth_resolve_org ignores revoked keys). Returns
+   *  the number of active keys actually revoked (0 if unknown/already revoked). */
+  async revoke(tx: TenantClient, orgId: OrgId, prefix: string): Promise<number> {
+    const res = await tx.apiKey.updateMany({
+      where: { orgId, prefix, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return res.count;
+  },
+
+  /** Revoke every active key EXCEPT the given prefix — the single-active-key rotate (7c). */
+  async revokeOthers(tx: TenantClient, orgId: OrgId, keepPrefix: string): Promise<number> {
+    const res = await tx.apiKey.updateMany({
+      where: { orgId, revokedAt: null, prefix: { not: keepPrefix } },
+      data: { revokedAt: new Date() },
+    });
+    return res.count;
+  },
+
+  /** Most-recent active key prefix — the Connect view's display handle. */
+  async latestActivePrefix(tx: TenantClient, orgId: OrgId): Promise<string | null> {
+    const row = await tx.apiKey.findFirst({
+      where: { orgId, revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    return row?.prefix ?? null;
   },
 };
 
@@ -267,6 +392,7 @@ export const transitionRepo = {
         reason: t.reason,
         at: new Date(t.at),
         ...(t.approver !== undefined ? { approver: t.approver } : {}),
+        ...(t.actor !== undefined ? { actor: t.actor } : {}),
       },
     });
     return mapTransition(row);

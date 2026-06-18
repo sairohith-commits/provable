@@ -14,21 +14,64 @@ const ACTIVITY_WINDOW_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * Derive the displayed identity state from REAL activity using core's pure rule:
- * no decisions → DISCOVERED; last-seen within the activity window → ACTIVE; older →
- * DORMANT; every task RETIRED → RETIRED. The window is composition-root policy (core
- * refuses to invent a clock), surfaced to the UI as `activityWindowDays`.
+ * Canonical displayed identity state. Phase C1: the STORED state is AUTHORITATIVE — admin
+ * actions + first-contact write `storedIdentityState`. RETIRED (explicit, or every task
+ * retired) and admin-DORMANT are returned as-is; a stored-ACTIVE agent gets the 30-day
+ * auto-dormancy overlay via core's pure rule. The window stays composition-root policy
+ * (core refuses to invent a clock), surfaced to the UI as `activityWindowDays`.
  */
 export function deriveIdentityState(row: RegistryAgentRow, asOf: string): AgentIdentityState {
-  if (row.taskCount > 0 && row.retiredTaskCount === row.taskCount) return 'RETIRED';
-  if (row.lastSeen === null) return 'DISCOVERED';
+  const stored = row.storedIdentityState;
+  if (stored === 'RETIRED' || (row.taskCount > 0 && row.retiredTaskCount === row.taskCount)) {
+    return 'RETIRED';
+  }
+  if (stored === 'DORMANT') return 'DORMANT'; // admin-deactivated (sticky)
+  if (stored === 'DISCOVERED') return row.lastSeen === null ? 'DISCOVERED' : 'ACTIVE';
+  // stored === 'ACTIVE' — apply the activity overlay through core's pure rule.
+  if (row.lastSeen === null) return 'ACTIVE';
   const lower = Date.parse(asOf) - ACTIVITY_WINDOW_DAYS * MS_PER_DAY;
-  const event = Date.parse(row.lastSeen) >= lower ? 'ACTIVITY' : 'INACTIVITY';
-  // Apply the event from the base 'ACTIVE' candidate: ACTIVITY→ACTIVE, INACTIVITY→DORMANT.
-  return transitionIdentity('ACTIVE', event);
+  return transitionIdentity('ACTIVE', Date.parse(row.lastSeen) >= lower ? 'ACTIVITY' : 'INACTIVITY');
+}
+
+/**
+ * DISPLAY label — distinguishes the two DORMANT causes the canonical state can't: an
+ * admin-deactivated agent ("DEACTIVATED", sticky, never auto-revives) vs a stored-ACTIVE
+ * agent merely gone quiet ("IDLE", auto-revives on the next decision). Same stored machine,
+ * finer labels for the admin surface.
+ */
+export type IdentityDisplayStatus = 'DISCOVERED' | 'ACTIVE' | 'IDLE' | 'DEACTIVATED' | 'RETIRED';
+
+export function deriveDisplayStatus(row: RegistryAgentRow, asOf: string): IdentityDisplayStatus {
+  const stored = row.storedIdentityState;
+  if (stored === 'RETIRED' || (row.taskCount > 0 && row.retiredTaskCount === row.taskCount)) {
+    return 'RETIRED';
+  }
+  if (stored === 'DORMANT') return 'DEACTIVATED';
+  if (stored === 'DISCOVERED') return row.lastSeen === null ? 'DISCOVERED' : 'ACTIVE';
+  if (row.lastSeen === null) return 'ACTIVE';
+  const lower = Date.parse(asOf) - ACTIVITY_WINDOW_DAYS * MS_PER_DAY;
+  return Date.parse(row.lastSeen) >= lower ? 'ACTIVE' : 'IDLE';
 }
 
 export const IDENTITY_POLICY = { activityWindowDays: ACTIVITY_WINDOW_DAYS } as const;
+
+// ── Integration fidelity (Phase C2) ─────────────────────────────────────────────
+/**
+ * `observe-only` — the task has activity/cost but ZERO resolved verdicts all-time (the gateway
+ * tier: cost + activity, no verdict channel). Readiness is honestly INSUFFICIENT here, never a
+ * fabricated 0 — the UI shows "N/A (Observe-only)" + an upgrade prompt. `governed` — a verdict
+ * channel exists, so readiness can score. Source-agnostic, but this is exactly what a
+ * gateway-only agent looks like.
+ */
+export type Fidelity = 'observe-only' | 'governed';
+
+export function deriveFidelity(row: { totalVolume: number; totalResolved: number }): Fidelity {
+  return row.totalVolume > 0 && row.totalResolved === 0 ? 'observe-only' : 'governed';
+}
+
+/** Honest upgrade prompt shown beside an Observe-only task (cost/activity tracked, no score). */
+export const OBSERVE_ONLY_UPGRADE =
+  'Observe-only: cost + activity tracked. Add verdicts (SDK or adapter) to unlock a readiness score.';
 
 // ── ROI / shadow-counterfactual (PROJECTIONS, assumptions attached) ─────────────
 export interface RoiAssumptions {

@@ -143,3 +143,60 @@ Claude Code proved the riskiest part on a **fresh Postgres owned by a NON-superu
    letting the owner-run auth functions work. No real weakening — the app never connects as
    the owner.
 3. Migrations run via **`DIRECT_URL`** (Neon non-pooled), per the schema's `directUrl`.
+
+---
+
+# BYOC — customer-hosted deployment (Phase D)
+
+A fully self-hosted, single-VM Provable instance: web + api + Postgres, on your network, your
+IdP, **nothing phoning home**. The only outbound call is your configured LLM upstream (gateway).
+Additive — the Clerk SaaS path and the Vercel/Render deploy above are untouched.
+
+## Bring-up
+
+```sh
+cp deploy/.env.template deploy/.env      # fill in (passwords, AUTH_*, BOOTSTRAP_OWNER_EMAIL …)
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up --build
+```
+
+Order is enforced by the compose graph: **postgres (healthy) → bootstrap (runs to completion) →
+api (RLS assertion) → web**. Web on `WEB_PORT` (default 3020), api on `API_PORT` (3010).
+
+## The RLS-role model (do NOT collapse to one URL)
+
+- `DATABASE_URL` → the **non-owner, RLS-scoped** app role (`provable_app`). The api runtime uses
+  ONLY this. Under ENABLE (not FORCE) RLS the table *owner* bypasses RLS, so the runtime must be
+  a non-owner — **the api asserts this at boot and refuses to start otherwise** (`exit 1`).
+- `DIRECT_URL` → the **owner/superuser** connection. Migrations + role-create + SECURITY DEFINER
+  auth lookups only. Never the app runtime.
+
+## Bootstrap (idempotent, ordered — resolves the no-lockout requirement)
+
+`scripts/bootstrap.mjs` (the `bootstrap` one-shot) does, re-runnably:
+1. create the non-owner `APP_DB_ROLE` with `APP_DB_PASSWORD` (owner/DIRECT_URL),
+2. `prisma migrate deploy` (owner/DIRECT_URL) — tables, grants, RLS policies,
+3. seed `BOOTSTRAP_OWNER_EMAIL` as the first Owner of `WORKSPACE_ORG_ID` (app role) — so the
+   deny-by-default RBAC has an Owner **before** the app serves a request (no lockout window).
+
+## Self-hosted auth (no Clerk)
+
+Set `AUTH_PROVIDER=local` (a single bcrypt-hashed admin) or `AUTH_PROVIDER=oidc` (your IdP —
+`OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI`; `email_verified` is required to bind invites).
+Generate a local hash:
+`node -e "console.log(require('bcryptjs').hashSync(process.argv[1],10))" 'your-password'`.
+
+## External managed DB (instead of bundled Postgres)
+
+Delete the `postgres` service (and the `depends_on: postgres`) and point `DATABASE_URL`
+(non-owner) + `DIRECT_URL` (owner) at your managed instance. The bootstrap still creates the
+role + migrates + seeds the Owner.
+
+## License
+
+`LICENSE_KEY` is an **optional, offline** slot — read and logged-as-present only. Never
+validated, never phones home. Real licensing is a deferred business-layer concern.
+
+## Helm / k8s
+
+Out of scope for this phase — a `phase-d-helm` follow-on. The Dockerfiles + bootstrap here are
+the reusable artifacts a chart would wrap.

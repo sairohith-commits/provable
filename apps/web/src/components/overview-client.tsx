@@ -1,5 +1,6 @@
 'use client';
 
+import { type Role, can } from '@provable/contracts';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CostView,
@@ -94,10 +95,14 @@ function KpiRow({ summary }: { summary: SummaryView }) {
   );
 }
 
-export function OverviewClient({ initial }: { initial: OverviewData }) {
+export function OverviewClient({ initial, role }: { initial: OverviewData; role: Role }) {
   const [data, setData] = useState<OverviewData>(initial);
   const [persona, setPersona] = useState<Persona>('All');
   const [pending, setPending] = useState<string | null>(null);
+  // UX-only (NOT the security boundary): hide the Approve control for roles without the
+  // permission. The API independently enforces approve_transition on every call.
+  const canApprove = can(role, 'approve_transition');
+  const canFreeSet = can(role, 'free_set_mode');
 
   const refresh = useCallback(async () => {
     const res = await fetch('/api/overview', { cache: 'no-store' });
@@ -126,6 +131,32 @@ export function OverviewClient({ initial }: { initial: OverviewData }) {
     [refresh],
   );
 
+  const setMode = useCallback(
+    async (agentKey: string, taskKey: string, mode: string, reason: string) => {
+      setPending(`${agentKey}:${taskKey}`);
+      try {
+        await fetch('/api/set-mode', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agentKey, taskKey, mode, reason }),
+        });
+        await refresh();
+      } finally {
+        setPending(null);
+      }
+    },
+    [refresh],
+  );
+
+  // Standing-divergence labels: the latest MANUAL_OVERRIDE actor per agent×task (audit-sourced).
+  const overrideActor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of data.transitions) {
+      if (t.trigger === 'MANUAL_OVERRIDE' && t.actor) m.set(`${t.agentKey}:${t.taskKey}`, t.actor);
+    }
+    return m;
+  }, [data.transitions]);
+
   const ranked = useMemo(
     () => sortReadinessRows(data.agents, data.transitions),
     [data.agents, data.transitions],
@@ -141,6 +172,10 @@ export function OverviewClient({ initial }: { initial: OverviewData }) {
         ranked={ranked}
         pending={pending}
         onApprove={approve}
+        canApprove={canApprove}
+        onSetMode={setMode}
+        canFreeSet={canFreeSet}
+        overrideActor={overrideActor}
       />
     ),
     governance: <GovernanceSection key="governance" transitions={data.transitions} />,
@@ -182,10 +217,18 @@ function ReadinessSection({
   ranked,
   pending,
   onApprove,
+  canApprove,
+  onSetMode,
+  canFreeSet,
+  overrideActor,
 }: {
   ranked: ReturnType<typeof sortReadinessRows>;
   pending: string | null;
   onApprove: (a: string, t: string) => void;
+  canApprove: boolean;
+  onSetMode: (a: string, t: string, mode: string, reason: string) => void;
+  canFreeSet: boolean;
+  overrideActor: Map<string, string>;
 }) {
   return (
     <section className="pillar" data-section="readiness">
@@ -213,7 +256,12 @@ function ReadinessSection({
                   </span>
                 </div>
                 <ReadinessLadder score={row.score} effectiveMode={row.effectiveMode} />
-                {attention.pendingApproval ? (
+                {overrideActor.has(id) ? (
+                  <span className="flag flag-override" data-override>
+                    manual override by {overrideActor.get(id)}
+                  </span>
+                ) : null}
+                {attention.pendingApproval && canApprove ? (
                   <button
                     className="approve"
                     disabled={pending === id}
@@ -222,12 +270,48 @@ function ReadinessSection({
                     {pending === id ? 'Approving…' : 'Approve promotion'}
                   </button>
                 ) : null}
+                {canFreeSet ? (
+                  <FreeSetControl
+                    busy={pending === id}
+                    onSet={(mode, reason) => onSetMode(row.agentKey, row.taskKey, mode, reason)}
+                  />
+                ) : null}
               </li>
             );
           })}
         </ul>
       )}
     </section>
+  );
+}
+
+// free_set_mode control (Owner/Approver, UX-gated). Reason REQUIRED; the API is authoritative.
+function FreeSetControl({ busy, onSet }: { busy: boolean; onSet: (mode: string, reason: string) => void }) {
+  const [mode, setMode] = useState('SHADOW');
+  const [reason, setReason] = useState('');
+  return (
+    <div className="free-set" data-free-set>
+      <select value={mode} onChange={(e) => setMode(e.target.value)} aria-label="set mode" data-mode-select>
+        <option value="SHADOW">Shadow</option>
+        <option value="CO_PILOT">Co-Pilot</option>
+        <option value="SOLO">Solo</option>
+      </select>
+      <input
+        className="reason-input"
+        placeholder="reason (required)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        data-reason
+      />
+      <button
+        className="lens"
+        disabled={busy || reason.trim().length === 0}
+        onClick={() => onSet(mode, reason.trim())}
+        data-set-mode
+      >
+        Set mode
+      </button>
+    </div>
   );
 }
 

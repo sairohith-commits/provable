@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadOverview } from '@/lib/overview';
-import { activeProvableOrg } from '@/lib/org';
+import { getAuthContext } from '@/lib/auth';
 import type { OverviewData } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,7 @@ const EMPTY: OverviewData = {
 
 // Polled by the client overview so a running climb visibly updates (no SSE).
 export async function GET() {
-  const orgId = await activeProvableOrg();
-  if (orgId === null) return NextResponse.json(EMPTY);
-  return NextResponse.json(await loadOverview(orgId));
+  const ctx = await getAuthContext();
+  if (ctx === null) return NextResponse.json(EMPTY);
+  return NextResponse.json(await loadOverview(ctx.orgId, ctx.userId));
 }

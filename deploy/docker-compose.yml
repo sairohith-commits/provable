@@ -1,0 +1,67 @@
+# BYOC single-VM stack — a fully customer-hosted Provable instance. Nothing phones home
+# (the only outbound call is the configured LLM upstream via the gateway). ADDITIVE: this is
+# separate from the repo-root dev docker-compose.yml.
+#
+#   cp deploy/.env.template deploy/.env   # then fill it in
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# Ordering: postgres (healthy) → bootstrap (runs to completion) → api (RLS assertion) → web.
+# To use an EXTERNAL managed DB instead of the bundled Postgres: delete the `postgres` service +
+# its depends_on, and point DATABASE_URL/DIRECT_URL at the managed instance.
+services:
+  postgres:
+    image: postgres:16
+    container_name: provable-byoc-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - byoc_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: create the non-owner role, migrate, seed the first Owner. Idempotent; re-run safe.
+  bootstrap:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    command: ['node', 'scripts/bootstrap.mjs']
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    env_file: .env
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'node -e "fetch(\"http://127.0.0.1:3000/health\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
+      interval: 5s
+      timeout: 4s
+      retries: 20
+    ports:
+      - '${API_PORT:-3010}:3000'
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    env_file: .env
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '${WEB_PORT:-3020}:3000'
+
+volumes:
+  byoc_pgdata:

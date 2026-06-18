@@ -69,7 +69,7 @@ enum TransitionTrigger {
   DRIFT
   GUARDRAIL
   SIGNAL_LOSS
-  MANUAL
+  MANUAL_OVERRIDE
   SCHEDULED
 }
 
@@ -84,6 +84,14 @@ enum TransitionStatus {
 enum ScoreStatus {
   SCORED
   INSUFFICIENT
+}
+
+// RBAC roles (Phase B) — mirrors @provable/contracts ROLES (lockstep-tested).
+enum Role {
+  OWNER
+  APPROVER
+  OPERATOR
+  VIEWER
 }
 
 // ── Entities ───────────────────────────────────────────────────────────────────
@@ -101,14 +109,60 @@ model Org {
   verdictEvents VerdictEvent[]
   transitions   Transition[]
   scores        Score[]
+  memberships   Membership[]
+  apiKeys       ApiKey[]
 
   @@map("org")
 }
 
+// Org-scoped ingestion key (Phase C1). Multiple active keys per org enable zero-downtime
+// rotation (mint new before revoking old). The plaintext is shown ONCE; we store only the
+// lookup prefix + sha256 hash. `revokedAt` is a soft kill — auth_resolve_org only matches
+// active (revokedAt IS NULL) keys, so a revoked key dies on its next request.
+model ApiKey {
+  id        String    @id @default(uuid())
+  orgId     String
+  prefix    String    @unique // lookup handle (the secret is never stored)
+  hash      String // sha256 of the full key
+  label     String? // optional human label
+  agentKey  String? // room for per-agent keys later; C1 keys are org-scoped (always null)
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("api_key")
+}
+
+// RBAC membership (Phase B) — who may do what in an org. Tenant-scoped by orgId (RLS).
+// An invite is created by `email` with `subject` NULL; first login binds `subject` to the
+// provider's verified subject. (orgId, subject) is unique when bound; NULLs are distinct in
+// Postgres so multiple pending invites coexist.
+model Membership {
+  id               String    @id @default(uuid())
+  orgId            String
+  email            String // lowercased invite identifier + display
+  subject          String? // provider subject (Clerk userId | OIDC sub | local:<email>), bound on first login
+  role             Role
+  invitedBySubject String? // who issued the invite (audit)
+  createdAt        DateTime  @default(now())
+  boundAt          DateTime? // when subject was bound
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, email])
+  @@unique([orgId, subject])
+  @@index([orgId])
+  @@index([orgId, subject])
+  @@map("membership")
+}
+
 model Agent {
   orgId         String
-  agentKey      String
-  identityState AgentIdentityState @default(DISCOVERED)
+  agentKey      String // immutable SDK identity
+  displayName   String? // human-friendly label (rename target; agentKey never changes)
+  identityState AgentIdentityState @default(DISCOVERED) // AUTHORITATIVE (Phase C1): admin actions + first-activity write this
   createdAt     DateTime           @default(now())
 
   org       Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -130,6 +184,7 @@ model Task {
   consecutivePromotionReady Int           @default(0)
   consecutiveSubFloor       Int           @default(0)
   consecutiveInsufficient   Int           @default(0) // signal-loss demotion counter (Phase 7 backlog)
+  lastImpliedRank           Int? // regression baseline for score-demotion (free-set-mode phase)
   pendingToMode             AutonomyMode?
   pendingAwaitingApproval   Boolean       @default(false)
   createdAt     DateTime     @default(now())
@@ -207,7 +262,8 @@ model Transition {
   direction TransitionDirection
   trigger   TransitionTrigger
   status    TransitionStatus
-  approver  String?
+  approver  String? // the human who APPROVED an earned promotion (trigger SCORE_CROSS)
+  actor     String? // the human who issued a MANUAL_OVERRIDE (free_set_mode); distinct from approver
   reason    String
   at        DateTime
   createdAt DateTime            @default(now())

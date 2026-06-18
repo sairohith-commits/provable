@@ -44,16 +44,17 @@ function withApprover(t: Transition, names: Map<string, string>): TransitionView
   return { ...t, approverDisplay: display };
 }
 
-/** Load every pillar for an org in one shot, resolving approver ids to human names. */
-export async function loadOverview(orgId: string): Promise<OverviewData> {
+/** Load every pillar for an org in one shot, resolving approver ids to human names.
+ *  `subject` is the caller's provider subject — forwarded so the API can role-gate the reads. */
+export async function loadOverview(orgId: string, subject: string): Promise<OverviewData> {
   const [agents, transitions, registry, visibility, cost, guardrails, summary] = await Promise.all([
-    getAgents(orgId),
-    getTransitions(orgId),
-    getRegistry(orgId),
-    getVisibility(orgId),
-    getCost(orgId),
-    getGuardrails(orgId),
-    getSummary(orgId),
+    getAgents(orgId, subject),
+    getTransitions(orgId, subject),
+    getRegistry(orgId, subject),
+    getVisibility(orgId, subject),
+    getCost(orgId, subject),
+    getGuardrails(orgId, subject),
+    getSummary(orgId, subject),
   ]);
 
   const approverIds = [...transitions, ...guardrails.events]

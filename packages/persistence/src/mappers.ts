@@ -84,6 +84,7 @@ export function mapTransition(row: TransitionRow): Transition {
     reason: row.reason,
     at: row.at.toISOString(),
     ...(row.approver !== null ? { approver: row.approver } : {}),
+    ...(row.actor !== null ? { actor: row.actor } : {}),
   };
 }
 

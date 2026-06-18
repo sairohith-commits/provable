@@ -14,6 +14,7 @@ export type { TenantClient } from './tenant.js';
 export { disconnect } from './client.js';
 export {
   agentRepo,
+  apiKeyRepo,
   decisionRepo,
   orgRepo,
   scoreRepo,
@@ -21,13 +22,21 @@ export {
   transitionRepo,
   verdictEventRepo,
 } from './repositories.js';
-export type { DecisionCreateInput, VerdictEventInput } from './repositories.js';
+export type { AgentRecord, ApiKeyRow, DecisionCreateInput, VerdictEventInput } from './repositories.js';
 export { mapDecision, mapTransition, mapVerdictEvent, mapScore } from './mappers.js';
 export type { ScoreRecord } from './mappers.js';
 export { makeRecomputePorts } from './recompute-ports.js';
 export type { RecomputePorts } from './recompute-ports.js';
 export { resolveOrgByApiKey, resolveOrgByClerkOrgId } from './auth.js';
-export { provisionOrg, linkClerkOrg } from './provision.js';
+export {
+  assertRlsScopedConnection,
+  checkRlsScopedConnection,
+  RlsScopeError,
+} from './rls-assert.js';
+export type { RlsConnectionStatus } from './rls-assert.js';
+export { provisionOrg, linkClerkOrg, assignRole, bootstrapAppRole } from './provision.js';
+export { membershipRepo, normalizeEmail } from './membership.js';
+export type { MemberRow } from './membership.js';
 export { readModelRepo } from './read-models.js';
 export type {
   RegistryView,

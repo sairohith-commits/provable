@@ -1,6 +1,15 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentKey, ExternalRef, OrgId, TaskKey } from '@provable/contracts';
-import { decisionRepo, disconnect, withTenant } from '../src/index.js';
+import {
+  apiKeyRepo,
+  decisionRepo,
+  disconnect,
+  membershipRepo,
+  orgRepo,
+  resolveOrgByApiKey,
+  withTenant,
+} from '../src/index.js';
+import { createHash } from 'node:crypto';
 import { adminClient, appClient, disconnectClients, resetDb } from './helpers.js';
 
 const A = 'org_A' as OrgId;
@@ -58,5 +67,62 @@ describe('Two-tenant RLS isolation (DB-enforced)', () => {
     const aAgents = await withTenant(A, (tx) => tx.agent.findMany());
     expect(aAgents.every((r) => r.orgId === A)).toBe(true);
     expect(aAgents).toHaveLength(1);
+  });
+
+  it('membership (RBAC) is tenant-isolated like every other table', async () => {
+    // Ensure the org rows exist first (membership.orgId FK).
+    await withTenant(A, async (tx) => {
+      await orgRepo.ensure(tx, A);
+      await membershipRepo.invite(tx, A, 'owner@a.test', 'OWNER', 'seed');
+    });
+    await withTenant(B, async (tx) => {
+      await orgRepo.ensure(tx, B);
+      await membershipRepo.invite(tx, B, 'owner@b.test', 'OWNER', 'seed');
+    });
+
+    // Each tenant sees only its own members.
+    const aMembers = await withTenant(A, (tx) => membershipRepo.list(tx, A));
+    expect(aMembers.map((m) => m.email)).toEqual(['owner@a.test']);
+    const bMembers = await withTenant(B, (tx) => membershipRepo.list(tx, B));
+    expect(bMembers.map((m) => m.email)).toEqual(['owner@b.test']);
+
+    // DB-enforced: superuser (RLS bypass) sees BOTH; no-context app query sees nothing.
+    expect(await adminClient.membership.findMany()).toHaveLength(2);
+    expect(await appClient.membership.findMany()).toEqual([]);
+  });
+
+  it('api_key (Phase C1) is tenant-isolated like every other table', async () => {
+    await withTenant(A, async (tx) => {
+      await orgRepo.ensure(tx, A);
+      await apiKeyRepo.mint(tx, A, 'aaaaaa', 'hashA');
+    });
+    await withTenant(B, async (tx) => {
+      await orgRepo.ensure(tx, B);
+      await apiKeyRepo.mint(tx, B, 'bbbbbb', 'hashB');
+    });
+
+    const aKeys = await withTenant(A, (tx) => apiKeyRepo.listActive(tx, A));
+    expect(aKeys.map((k) => k.prefix)).toEqual(['aaaaaa']);
+
+    expect(await adminClient.apiKey.findMany()).toHaveLength(2);
+    expect(await appClient.apiKey.findMany()).toEqual([]);
+  });
+
+  it('a migrated/minted key resolves to its org via the SECURITY DEFINER lookup; revoked dies', async () => {
+    // Mimic the migration outcome: an api_key row carrying the org's prefix + sha256(full key).
+    const fullKey = 'pvb_c0ffee_deadbeefdeadbeefdeadbeef';
+    const prefix = 'c0ffee';
+    const hash = createHash('sha256').update(fullKey).digest('hex');
+    await withTenant(A, async (tx) => {
+      await orgRepo.ensure(tx, A);
+      await apiKeyRepo.mint(tx, A, prefix, hash, 'migrated');
+    });
+
+    // resolveOrgByApiKey runs WITHOUT tenant context (SECURITY DEFINER) and returns org A.
+    expect(await resolveOrgByApiKey(prefix, hash)).toBe(A);
+
+    // After revoke, the same key resolves to nothing (active-only lookup).
+    await withTenant(A, (tx) => apiKeyRepo.revoke(tx, A, prefix));
+    expect(await resolveOrgByApiKey(prefix, hash)).toBeNull();
   });
 });

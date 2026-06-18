@@ -1,0 +1,20 @@
+# BYOC web image — Next.js App Router via standalone output (self-contained server bundle).
+FROM node:22-bookworm-slim AS build
+RUN corepack enable
+WORKDIR /app
+COPY . .
+RUN pnpm install --frozen-lockfile
+# Build workspace deps (contracts) then the Next standalone bundle.
+RUN pnpm --filter @provable/contracts build
+RUN pnpm --filter @provable/web exec next build
+
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+# Next standalone: a minimal server + traced node_modules, plus the hashed static assets.
+# (apps/web ships no public/ dir, so there is nothing to copy there.)
+COPY --from=build /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+EXPOSE 3000
+CMD ["node", "apps/web/server.js"]
