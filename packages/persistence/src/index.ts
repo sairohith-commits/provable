@@ -28,7 +28,13 @@ export type { ScoreRecord } from './mappers.js';
 export { makeRecomputePorts } from './recompute-ports.js';
 export type { RecomputePorts } from './recompute-ports.js';
 export { resolveOrgByApiKey, resolveOrgByClerkOrgId } from './auth.js';
-export { provisionOrg, linkClerkOrg, assignRole } from './provision.js';
+export {
+  assertRlsScopedConnection,
+  checkRlsScopedConnection,
+  RlsScopeError,
+} from './rls-assert.js';
+export type { RlsConnectionStatus } from './rls-assert.js';
+export { provisionOrg, linkClerkOrg, assignRole, bootstrapAppRole } from './provision.js';
 export { membershipRepo, normalizeEmail } from './membership.js';
 export type { MemberRow } from './membership.js';
 export { readModelRepo } from './read-models.js';

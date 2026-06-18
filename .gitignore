@@ -35,3 +35,6 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+!.env.template
+# Local gate-credential file (Clerk e2e + prod RLS check). NEVER commit — explicit belt-and-suspenders.
+deploy/.env.prod-gate

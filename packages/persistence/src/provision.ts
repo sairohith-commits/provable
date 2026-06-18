@@ -1,7 +1,36 @@
+import { PrismaClient } from '@prisma/client';
 import type { OrgId, Role } from '@provable/contracts';
 import { membershipRepo } from './membership.js';
 import { apiKeyRepo, orgRepo } from './repositories.js';
 import { withTenant } from './tenant.js';
+
+/**
+ * BYOC bootstrap step 1 — create the scoped NON-OWNER app role (idempotent), via the
+ * OWNER/DIRECT_URL connection. Lives here (not a root script) so @prisma/client resolves under
+ * pnpm. The role is a plain LOGIN role: NOT superuser, NO BYPASSRLS — so RLS fully applies (the
+ * startup assertion enforces the runtime uses it). Password is validated upstream (DDL-safe charset).
+ */
+export async function bootstrapAppRole(opts: {
+  directUrl: string;
+  role: string;
+  password: string;
+  database: string;
+}): Promise<void> {
+  const owner = new PrismaClient({ datasources: { db: { url: opts.directUrl } } });
+  try {
+    await owner.$executeRawUnsafe(
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${opts.role}') THEN
+           CREATE ROLE "${opts.role}" WITH LOGIN PASSWORD '${opts.password}';
+         END IF;
+       END $$;`,
+    );
+    await owner.$executeRawUnsafe(`GRANT CONNECT ON DATABASE "${opts.database}" TO "${opts.role}";`);
+    await owner.$executeRawUnsafe(`GRANT USAGE ON SCHEMA public TO "${opts.role}";`);
+  } finally {
+    await owner.$disconnect();
+  }
+}
 
 /**
  * Provision an org with a machine key (prefix + sha256 hash). Out-of-band admin

@@ -1,0 +1,20 @@
+# BYOC api image — Fastify control-plane API + the bootstrap one-shot (same image).
+# Multi-stage: build the workspace (contracts/core/persistence/adapters/api + prisma generate),
+# then ship the built tree. The full workspace is carried so `prisma migrate deploy` + the
+# bootstrap script run with the exact repo layout.
+FROM node:22-bookworm-slim AS build
+RUN corepack enable
+WORKDIR /app
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @provable/api... build
+
+FROM node:22-bookworm-slim AS runtime
+RUN corepack enable
+WORKDIR /app
+ENV NODE_ENV=production
+# Built workspace: dist, node_modules (incl. the Prisma engine + CLI), prisma schema/migrations, scripts.
+COPY --from=build /app /app
+EXPOSE 3000
+# Default command runs the API; the compose `bootstrap` service overrides it with the seed script.
+CMD ["node", "apps/api/dist/server.js"]
