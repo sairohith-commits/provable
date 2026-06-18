@@ -9,6 +9,9 @@ export interface NavLink {
 
 export function adminNavLinks(role: Role): NavLink[] {
   const links: NavLink[] = [];
+  if (can(role, 'manage_agents') || can(role, 'manage_keys')) {
+    links.push({ href: '/onboarding', label: 'Onboarding' });
+  }
   if (can(role, 'manage_agents') || can(role, 'activate_deactivate')) {
     links.push({ href: '/admin/agents', label: 'Agents' });
   }

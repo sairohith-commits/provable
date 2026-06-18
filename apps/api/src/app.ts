@@ -15,7 +15,15 @@ import {
   withTenant,
 } from '@provable/persistence';
 import { generateApiKey } from './auth.js';
-import { deriveDisplayStatus, deriveIdentityState, deriveRoi, IDENTITY_POLICY } from './views.js';
+import { registerGateway } from './gateway.js';
+import {
+  deriveDisplayStatus,
+  deriveFidelity,
+  deriveIdentityState,
+  deriveRoi,
+  IDENTITY_POLICY,
+  OBSERVE_ONLY_UPGRADE,
+} from './views.js';
 import Fastify from 'fastify';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -47,6 +55,7 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
           redact: [
             'req.headers.authorization',
             'req.headers["x-api-key"]',
+            'req.headers["x-provable-key"]',
             'req.headers["x-provable-internal-token"]',
           ],
         }
@@ -237,7 +246,10 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     if (orgId === null) return;
     const asOf = new Date().toISOString();
     const view = await withTenant(orgId, (tx) => readModelRepo.visibility(tx, asOf));
-    return reply.send(view);
+    // Attach integration fidelity per task: Observe-only (gateway: cost/activity, no verdicts) →
+    // readiness stays honest N/A + upgrade prompt; never a fabricated score.
+    const tasks = view.tasks.map((t) => ({ ...t, fidelity: deriveFidelity(t) }));
+    return reply.send({ ...view, tasks, observeOnlyUpgrade: OBSERVE_ONLY_UPGRADE });
   });
 
   // Cost & ROI: REAL cost aggregates + a DERIVED ROI/shadow-counterfactual projection that
@@ -261,6 +273,10 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     const view = await withTenant(orgId, (tx) => readModelRepo.safety(tx));
     return reply.send(view);
   });
+
+  // ── Phase C2: gateway proxy (Tier 1, Observe-only). Machine-key data path; never reaches the
+  //    human onboarding actions. Registered here as the interim home (refactors to adapters/gateway).
+  registerGateway(app);
 
   // KPI summary: composed REAL counts + the ROI projection (assumptions attached). Honest
   // zeros on a fresh org; the api key PREFIX (lookup handle, not the secret) for the Connect view.

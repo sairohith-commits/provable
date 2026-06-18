@@ -55,6 +55,24 @@ export function deriveDisplayStatus(row: RegistryAgentRow, asOf: string): Identi
 
 export const IDENTITY_POLICY = { activityWindowDays: ACTIVITY_WINDOW_DAYS } as const;
 
+// ── Integration fidelity (Phase C2) ─────────────────────────────────────────────
+/**
+ * `observe-only` — the task has activity/cost but ZERO resolved verdicts all-time (the gateway
+ * tier: cost + activity, no verdict channel). Readiness is honestly INSUFFICIENT here, never a
+ * fabricated 0 — the UI shows "N/A (Observe-only)" + an upgrade prompt. `governed` — a verdict
+ * channel exists, so readiness can score. Source-agnostic, but this is exactly what a
+ * gateway-only agent looks like.
+ */
+export type Fidelity = 'observe-only' | 'governed';
+
+export function deriveFidelity(row: { totalVolume: number; totalResolved: number }): Fidelity {
+  return row.totalVolume > 0 && row.totalResolved === 0 ? 'observe-only' : 'governed';
+}
+
+/** Honest upgrade prompt shown beside an Observe-only task (cost/activity tracked, no score). */
+export const OBSERVE_ONLY_UPGRADE =
+  'Observe-only: cost + activity tracked. Add verdicts (SDK or adapter) to unlock a readiness score.';
+
 // ── ROI / shadow-counterfactual (PROJECTIONS, assumptions attached) ─────────────
 export interface RoiAssumptions {
   /** Minutes a human would spend handling one decision this agent handles. */

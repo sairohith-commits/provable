@@ -15,4 +15,5 @@ export * from './events.js';
 export * from './lifecycle.js';
 export * from './ports.js';
 export * from './rbac.js';
+export * from './gateway.js';
 export * from './assert-never.js';
