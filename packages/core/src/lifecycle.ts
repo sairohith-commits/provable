@@ -43,6 +43,14 @@ export interface LifecycleState {
   /** Consecutive INSUFFICIENT recomputes while governed — drives signal-loss demotion. */
   readonly consecutiveInsufficient: number;
   readonly pendingPromotion?: PendingPromotion;
+  /**
+   * The score-implied band rank at the previous SCORED recompute — the regression baseline.
+   * Score-demotion fires only on a FRESH decline (impliedRank drops below this), NOT on a static
+   * `score < mode` gap. So a MANUAL_OVERRIDE above earned band is a STANDING divergence that is
+   * surfaced, not auto-undone; a genuine new decline still auto-demotes it. Undefined until the
+   * first SCORED recompute (no prior ⇒ no decline). PROVABLE_CORE_ARCHITECTURE.md §2A.
+   */
+  readonly lastImpliedRank?: number;
 }
 
 export interface LifecycleSignals {
@@ -137,10 +145,17 @@ function makeTransition(
   reason: string,
   at: string,
   approver?: string,
+  actor?: string,
 ): Transition {
-  // The one business invariant the relaxed contract type can't express:
-  if (direction === 'PROMOTION' && status === 'APPLIED' && (approver === undefined || approver === '')) {
-    throw new Error('core/lifecycle invariant: an APPLIED promotion must carry an approver');
+  // Business invariants the relaxed contract type can't express:
+  if (trigger === 'MANUAL_OVERRIDE') {
+    // A manual override is authorized by an ACTOR (the human), not an earned-promotion approver.
+    if (actor === undefined || actor === '') {
+      throw new Error('core/lifecycle invariant: a MANUAL_OVERRIDE must carry an actor');
+    }
+  } else if (direction === 'PROMOTION' && status === 'APPLIED' && (approver === undefined || approver === '')) {
+    // An EARNED (SCORE_CROSS) promotion may only be APPLIED with a human approver.
+    throw new Error('core/lifecycle invariant: an APPLIED earned promotion must carry an approver');
   }
   const t: Transition = {
     orgId: ids.orgId,
@@ -154,7 +169,11 @@ function makeTransition(
     reason,
     at,
   };
-  return approver === undefined ? t : { ...t, approver };
+  return {
+    ...t,
+    ...(approver !== undefined ? { approver } : {}),
+    ...(actor !== undefined ? { actor } : {}),
+  };
 }
 
 function mkState(
@@ -163,12 +182,14 @@ function mkState(
   consecutiveSubFloor: number,
   pendingPromotion?: PendingPromotion,
   consecutiveInsufficient = 0, // SCORED/safety/observing recomputes reset it (the default)
+  lastImpliedRank?: number, // regression baseline — carry across recomputes (preserve or update)
 ): LifecycleState {
   const base = {
     effectiveMode,
     consecutivePromotionReady,
     consecutiveSubFloor,
     consecutiveInsufficient,
+    ...(lastImpliedRank !== undefined ? { lastImpliedRank } : {}),
   };
   return pendingPromotion === undefined ? base : { ...base, pendingPromotion };
 }
@@ -195,10 +216,14 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
     return { transitions, state, effectiveMode: mode };
   }
 
+  // lastImpliedRank (regression baseline) is PRESERVED through non-scored branches and UPDATED
+  // to the current implied rank on every SCORED recompute (steps 6/7 + observing exit).
+  const baseline = state.lastImpliedRank;
+
   // 1) Guardrail — instant AUTO_APPLIED suspension, grace 0 (highest precedence).
   if (signals.guardrail) {
     if (mode === 'SUSPENDED') {
-      return { transitions, state: mkState('SUSPENDED', 0, 0), effectiveMode: 'SUSPENDED' };
+      return { transitions, state: mkState('SUSPENDED', 0, 0, undefined, 0, baseline), effectiveMode: 'SUSPENDED' };
     }
     transitions.push(
       mk(
@@ -209,16 +234,16 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
         `guardrail ${signals.guardrail.guardrailId} tripped: ${signals.guardrail.reason}`,
       ),
     );
-    return { transitions, state: mkState('SUSPENDED', 0, 0), effectiveMode: 'SUSPENDED' };
+    return { transitions, state: mkState('SUSPENDED', 0, 0, undefined, 0, baseline), effectiveMode: 'SUSPENDED' };
   }
 
-  // 2) Drift — instant AUTO_APPLIED demotion, grace 0.
+  // 2) Drift — instant AUTO_APPLIED demotion, grace 0. Applies to manually-set agents too.
   if (signals.drift && isOperating(mode)) {
     const target = oneBandDown(mode);
     transitions.push(
       mk(target, 'DEMOTION', 'DRIFT', 'AUTO_APPLIED', `drift detected: ${signals.drift.reason}`),
     );
-    return { transitions, state: mkState(target, 0, 0), effectiveMode: target };
+    return { transitions, state: mkState(target, 0, 0, undefined, 0, baseline), effectiveMode: target };
   }
 
   // 3) Manual decision resolves a pending promotion.
@@ -235,7 +260,7 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
           signals.manual.approver,
         ),
       );
-      return { transitions, state: mkState(pending.toMode, 0, 0), effectiveMode: pending.toMode };
+      return { transitions, state: mkState(pending.toMode, 0, 0, undefined, 0, baseline), effectiveMode: pending.toMode };
     }
     transitions.push(
       mk(
@@ -247,7 +272,7 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
         signals.manual.approver,
       ),
     );
-    return { transitions, state: mkState(mode, 0, 0), effectiveMode: mode };
+    return { transitions, state: mkState(mode, 0, 0, undefined, 0, baseline), effectiveMode: mode };
   }
 
   // 4) OBSERVING → SHADOW requires BOTH ≥N resolved verdicts AND a SCORED readiness
@@ -266,14 +291,18 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
           `observing window reached ${readiness.resolvedCount} resolved & scored decisions`,
         ),
       );
-      return { transitions, state: mkState('SHADOW', 0, 0), effectiveMode: 'SHADOW' };
+      return {
+        transitions,
+        state: mkState('SHADOW', 0, 0, undefined, 0, impliedRankOf(readiness.impliedBand)),
+        effectiveMode: 'SHADOW',
+      };
     }
-    return { transitions, state: mkState('OBSERVING', 0, 0), effectiveMode: 'OBSERVING' };
+    return { transitions, state: mkState('OBSERVING', 0, 0, undefined, 0, baseline), effectiveMode: 'OBSERVING' };
   }
 
   // 5) SUSPENDED holds (recovery flow deferred to a later phase).
   if (mode === 'SUSPENDED') {
-    return { transitions, state: mkState('SUSPENDED', 0, 0), effectiveMode: 'SUSPENDED' };
+    return { transitions, state: mkState('SUSPENDED', 0, 0, undefined, 0, baseline), effectiveMode: 'SUSPENDED' };
   }
 
   // 5b) INSUFFICIENT readiness for an operating task. A GOVERNED task (CO_PILOT/SOLO) whose
@@ -296,18 +325,18 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
             `signal lost: readiness INSUFFICIENT for ${nextInsufficient} consecutive recomputes`,
           ),
         );
-        return { transitions, state: mkState(target, 0, 0), effectiveMode: target };
+        return { transitions, state: mkState(target, 0, 0, undefined, 0, baseline), effectiveMode: target };
       }
       return {
         transitions,
-        state: mkState(mode, 0, 0, state.pendingPromotion, nextInsufficient),
+        state: mkState(mode, 0, 0, state.pendingPromotion, nextInsufficient, baseline),
         effectiveMode: mode,
       };
     }
     // SHADOW (lowest operating band) — nothing to demote on signal loss.
     return {
       transitions,
-      state: mkState(mode, 0, 0, state.pendingPromotion),
+      state: mkState(mode, 0, 0, state.pendingPromotion, 0, baseline),
       effectiveMode: mode,
     };
   }
@@ -316,8 +345,15 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
   const modeRank = bandRank(mode);
   const impliedRank = impliedRankOf(readiness.impliedBand);
 
-  // 6) Score-drop demotion (takes precedence over promotion). 1-confirm grace.
-  if (impliedRank < modeRank) {
+  // 6) Score-drop demotion — a REGRESSION check (a FRESH decline below the mode floor), NOT a
+  //    static `score < band` gap. The standing gap of a MANUAL_OVERRIDE above earned band
+  //    (impliedRank flat == baseline) is NOT a decline → it HOLDS (surfaced, not auto-undone).
+  //    A genuine new decline (impliedRank drops below the baseline) still AUTO_APPLIED-demotes a
+  //    manually-set agent — override is not a safety off-switch. 1-confirm grace via subFloor;
+  //    no prior baseline (first scored recompute) ⇒ no decline. PROVABLE_CORE_ARCHITECTURE.md §2A.
+  const belowMode = impliedRank < modeRank;
+  const freshDecline = baseline !== undefined && impliedRank < baseline;
+  if (belowMode && (freshDecline || state.consecutiveSubFloor > 0)) {
     const nextSubFloor = state.consecutiveSubFloor + 1;
     if (nextSubFloor >= policy.scoreDropConfirmRecomputes) {
       const target = oneBandDown(mode);
@@ -327,13 +363,14 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
           'DEMOTION',
           'SCORE_CROSS',
           'AUTO_APPLIED',
-          `score ${round2(readiness.readinessScore)} below ${mode} floor for ${nextSubFloor} consecutive recomputes`,
+          `score ${round2(readiness.readinessScore)} declined below ${mode} floor for ${nextSubFloor} consecutive recomputes`,
         ),
       );
-      return { transitions, state: mkState(target, 0, 0), effectiveMode: target };
+      return { transitions, state: mkState(target, 0, 0, undefined, 0, impliedRank), effectiveMode: target };
     }
-    // First sub-floor recompute: no demotion yet; any promotion progress resets.
-    return { transitions, state: mkState(mode, 0, nextSubFloor), effectiveMode: mode };
+    // First sub-floor recompute of a fresh decline: no demotion yet; promotion progress resets.
+    // Freeze the baseline during the grace streak so the decline is still seen next recompute.
+    return { transitions, state: mkState(mode, 0, nextSubFloor, undefined, 0, baseline), effectiveMode: mode };
   }
 
   // 7) Promotion path (score is on/above the current band).
@@ -351,12 +388,12 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
       );
       return {
         transitions,
-        state: mkState(mode, 0, 0, { toMode: pending.toMode, awaitingApproval: true }),
+        state: mkState(mode, 0, 0, { toMode: pending.toMode, awaitingApproval: true }, 0, impliedRank),
         effectiveMode: mode,
       };
     }
     // Awaiting approval — hold; mode unchanged, no churn.
-    return { transitions, state: mkState(mode, 0, 0, pending), effectiveMode: mode };
+    return { transitions, state: mkState(mode, 0, 0, pending, 0, impliedRank), effectiveMode: mode };
   }
 
   const target = nextBandUp(mode);
@@ -374,15 +411,87 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
       );
       return {
         transitions,
-        state: mkState(mode, 0, 0, { toMode: target, awaitingApproval: false }),
+        state: mkState(mode, 0, 0, { toMode: target, awaitingApproval: false }, 0, impliedRank),
         effectiveMode: mode,
       };
     }
-    return { transitions, state: mkState(mode, nextReady, 0), effectiveMode: mode };
+    return { transitions, state: mkState(mode, nextReady, 0, undefined, 0, impliedRank), effectiveMode: mode };
   }
 
-  // Score not high enough to build promotion (or already SOLO) → reset counters.
-  return { transitions, state: mkState(mode, 0, 0), effectiveMode: mode };
+  // Score on/above band but not building promotion (or already SOLO) → reset counters; the
+  // current implied rank becomes the new regression baseline.
+  return { transitions, state: mkState(mode, 0, 0, undefined, 0, impliedRank), effectiveMode: mode };
+}
+
+// ─── manual override (free_set_mode) ─────────────────────────────────────────
+
+const OVERRIDE_TARGETS: ReadonlySet<AutonomyMode> = new Set<AutonomyMode>(['SHADOW', 'CO_PILOT', 'SOLO']);
+
+/** A valid free-set target: one of the operating bands. */
+export function isOverrideTarget(mode: AutonomyMode): boolean {
+  return OVERRIDE_TARGETS.has(mode);
+}
+
+/**
+ * free_set_mode operates on OBSERVING/SHADOW/CO_PILOT/SOLO. SUSPENDED recovery belongs to the
+ * suspend_agent follow-on (a temporary gap); RETIRED is terminal. Both are rejected.
+ */
+export function canOverrideFrom(mode: AutonomyMode): boolean {
+  return mode === 'OBSERVING' || isOperating(mode);
+}
+
+export interface ManualOverrideInput {
+  readonly ids: LifecycleIds;
+  readonly state: LifecycleState;
+  readonly target: AutonomyMode;
+  readonly actor: string;
+  readonly reason: string;
+  readonly asOf: string;
+}
+
+/**
+ * MANUAL_OVERRIDE (free_set_mode) — an authorized human sets effectiveMode to any operating band
+ * IMMEDIATELY: no score gate, no hysteresis, no approval. First-class, immutable, audited with
+ * `actor` (the human) + `reason`. The EARNED SCORE IS NEVER TOUCHED — `lastImpliedRank` (the
+ * regression baseline) is preserved, so the resulting divergence is a STANDING signal that the
+ * next recompute will NOT auto-undo (but a new adverse event still auto-demotes). Pure.
+ */
+export function manualOverride(input: ManualOverrideInput): LifecycleStepResult {
+  const { ids, state, target, actor, reason, asOf } = input;
+  const from = state.effectiveMode;
+  if (!isOverrideTarget(target)) {
+    throw new Error(`manualOverride: target must be an operating band (SHADOW|CO_PILOT|SOLO), got ${target}`);
+  }
+  if (!canOverrideFrom(from)) {
+    throw new Error(`manualOverride: cannot free-set from ${from} (SUSPENDED recovery & RETIRED are out of scope)`);
+  }
+  if (actor === '') throw new Error('manualOverride: actor required');
+  if (reason === '') throw new Error('manualOverride: reason required');
+
+  const direction: TransitionDirection =
+    bandRank(target) > bandRank(from)
+      ? 'PROMOTION'
+      : bandRank(target) < bandRank(from)
+        ? 'DEMOTION'
+        : 'LATERAL';
+
+  const transition = makeTransition(
+    ids,
+    from,
+    target,
+    direction,
+    'MANUAL_OVERRIDE',
+    'APPLIED',
+    reason,
+    asOf,
+    undefined, // no approver — a MANUAL_OVERRIDE is authorized by the actor
+    actor,
+  );
+
+  // effectiveMode set immediately; score untouched (baseline preserved); counters reset; any
+  // pending promotion is superseded by the human's direct decision.
+  const next = mkState(target, 0, 0, undefined, 0, state.lastImpliedRank);
+  return { transitions: [transition], state: next, effectiveMode: target };
 }
 
 /** Fold a sequence of recomputes through the engine (pure convenience for tests/consumers). */

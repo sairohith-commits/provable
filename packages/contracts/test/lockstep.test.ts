@@ -76,7 +76,7 @@ describe('as-const arrays stay in lockstep with their derived unions', () => {
       'DRIFT',
       'GUARDRAIL',
       'SIGNAL_LOSS',
-      'MANUAL',
+      'MANUAL_OVERRIDE',
       'SCHEDULED',
     ]);
     expect([...TRANSITION_STATUSES]).toEqual([

@@ -1,6 +1,6 @@
 import type { AgentIdentityState, AgentKey, OrgId, Permission, Role, TaskKey } from '@provable/contracts';
 import { ROLES, can } from '@provable/contracts';
-import { DEFAULT_GOVERNANCE_POLICY, computeReadiness, stepLifecycle, transitionIdentity } from '@provable/core';
+import { DEFAULT_GOVERNANCE_POLICY, computeReadiness, manualOverride, stepLifecycle, transitionIdentity } from '@provable/core';
 import type { IdentityEvent, TaskScope } from '@provable/core';
 import {
   agentRepo,
@@ -399,6 +399,51 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
 
     if ('conflict' in result) {
       return reply.code(409).send({ error: 'no pending promotion to approve' });
+    }
+    return reply.send(result);
+  });
+
+  // ── Free-set mode (MANUAL_OVERRIDE) — an Owner/Approver sets the mode directly ────────
+  // free_set_mode (OWNER/APPROVER); machine keys blocked (no internal context). Sets effectiveMode
+  // to any operating band IMMEDIATELY — no score gate, no approval — as a first-class audited
+  // Transition with actor + reason. The earned score is NEVER touched. Subsequent recomputes still
+  // auto-demote on a new adverse event (the override is a standing divergence, not a safety switch).
+  app.post('/agents/:agentKey/tasks/:taskKey/mode', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'free_set_mode');
+    if (auth === null) return;
+    const { agentKey, taskKey } = req.params as { agentKey: string; taskKey: string };
+    const { mode, reason } = (req.body ?? {}) as { mode?: string; reason?: string };
+    // actor = the human identity the web already forwards (approver), else the stable subject.
+    const actor = auth.ctx.approver ?? auth.ctx.subject;
+    if (actor === undefined || actor.length === 0) {
+      return reply.code(400).send({ error: 'actor (approver/subject) required' });
+    }
+    if (typeof reason !== 'string' || reason.trim().length === 0) {
+      return reply.code(400).send({ error: 'reason required' });
+    }
+    if (mode !== 'SHADOW' && mode !== 'CO_PILOT' && mode !== 'SOLO') {
+      return reply.code(400).send({ error: 'mode must be SHADOW | CO_PILOT | SOLO' });
+    }
+    const orgId = auth.ctx.orgId;
+    const asOf = new Date().toISOString();
+    const result = await withTenant(orgId, async (tx) => {
+      const scope: TaskScope = { orgId, agentKey: agentKey as AgentKey, taskKey: taskKey as TaskKey };
+      const current = await taskRepo.findEffectiveMode(tx, orgId, scope.agentKey, scope.taskKey);
+      if (current === null) return { notFound: true as const };
+      if (current === 'SUSPENDED' || current === 'RETIRED') return { blocked: current };
+      const ports = makeRecomputePorts(tx);
+      const state = await ports.lifecycle.read(scope);
+      // Earned score is NOT recomputed here — override sets effectiveMode only.
+      const step = manualOverride({ ids: scope, state, target: mode, actor, reason: reason.trim(), asOf });
+      for (const t of step.transitions) await ports.transitions.append(t);
+      await ports.lifecycle.write(scope, step.state);
+      return { effectiveMode: step.effectiveMode, transitions: [...step.transitions] };
+    });
+    if ('notFound' in result) return reply.code(404).send({ error: 'unknown agent×task' });
+    if ('blocked' in result) {
+      return reply
+        .code(409)
+        .send({ error: `cannot free-set from ${result.blocked} — recovery is the suspend_agent follow-on` });
     }
     return reply.send(result);
   });

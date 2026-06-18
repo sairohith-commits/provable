@@ -42,7 +42,7 @@
     "DRIFT",
     "GUARDRAIL",
     "SIGNAL_LOSS",
-    "MANUAL",
+    "MANUAL_OVERRIDE",
     "SCHEDULED"
   ],
   "transitionStatuses": [

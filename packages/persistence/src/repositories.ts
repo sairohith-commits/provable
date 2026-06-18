@@ -392,6 +392,7 @@ export const transitionRepo = {
         reason: t.reason,
         at: new Date(t.at),
         ...(t.approver !== undefined ? { approver: t.approver } : {}),
+        ...(t.actor !== undefined ? { actor: t.actor } : {}),
       },
     });
     return mapTransition(row);

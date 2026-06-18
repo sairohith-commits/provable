@@ -69,7 +69,7 @@ enum TransitionTrigger {
   DRIFT
   GUARDRAIL
   SIGNAL_LOSS
-  MANUAL
+  MANUAL_OVERRIDE
   SCHEDULED
 }
 
@@ -184,6 +184,7 @@ model Task {
   consecutivePromotionReady Int           @default(0)
   consecutiveSubFloor       Int           @default(0)
   consecutiveInsufficient   Int           @default(0) // signal-loss demotion counter (Phase 7 backlog)
+  lastImpliedRank           Int? // regression baseline for score-demotion (free-set-mode phase)
   pendingToMode             AutonomyMode?
   pendingAwaitingApproval   Boolean       @default(false)
   createdAt     DateTime     @default(now())
@@ -261,7 +262,8 @@ model Transition {
   direction TransitionDirection
   trigger   TransitionTrigger
   status    TransitionStatus
-  approver  String?
+  approver  String? // the human who APPROVED an earned promotion (trigger SCORE_CROSS)
+  actor     String? // the human who issued a MANUAL_OVERRIDE (free_set_mode); distinct from approver
   reason    String
   at        DateTime
   createdAt DateTime            @default(now())

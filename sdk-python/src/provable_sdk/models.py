@@ -64,7 +64,8 @@ class TransitionTrigger(StrEnum):
     SCORE_CROSS = "SCORE_CROSS"
     DRIFT = "DRIFT"
     GUARDRAIL = "GUARDRAIL"
-    MANUAL = "MANUAL"
+    SIGNAL_LOSS = "SIGNAL_LOSS"
+    MANUAL_OVERRIDE = "MANUAL_OVERRIDE"
     SCHEDULED = "SCHEDULED"
 
 
@@ -199,6 +200,7 @@ class Transition(_OutputModel):
     reason: str
     at: str
     approver: str | None = None
+    actor: str | None = None  # set for MANUAL_OVERRIDE (the authorizing human)
 
 
 class RecomputeResult(_OutputModel):

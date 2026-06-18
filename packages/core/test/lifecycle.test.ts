@@ -12,6 +12,7 @@ import {
   INITIAL_LIFECYCLE_STATE,
   computeReadiness,
   impliedBandForScore,
+  manualOverride,
   runLifecycle,
   stepLifecycle,
 } from '../src/index.js';
@@ -285,9 +286,14 @@ describe('Demotion is automatic — easy to fall, no approver', () => {
     expect(t.approver).toBeUndefined();
   });
 
-  it('score-drop demotes on the 2nd consecutive sub-floor recompute (1-confirm)', () => {
-    const step1 = stepLifecycle({ ids, state: operating('SOLO'), readiness: rr(60), policy, asOf: ASOF });
-    expect(step1.effectiveMode).toBe('SOLO'); // first sub-floor — grace
+  it('score-drop demotes on the 2nd consecutive sub-floor recompute after a FRESH decline (1-confirm)', () => {
+    // Regression semantics: establish a SOLO-implied baseline first, then a real decline. (A
+    // below-mode score with NO prior baseline is a standing gap that holds — covered separately.)
+    const seed = stepLifecycle({ ids, state: operating('SOLO'), readiness: rr(90), policy, asOf: ASOF });
+    expect(seed.effectiveMode).toBe('SOLO');
+
+    const step1 = stepLifecycle({ ids, state: seed.state, readiness: rr(60), policy, asOf: ASOF });
+    expect(step1.effectiveMode).toBe('SOLO'); // first sub-floor of the fresh decline — grace
     expect(step1.transitions).toHaveLength(0);
 
     const step2 = stepLifecycle({ ids, state: step1.state, readiness: rr(60), policy, asOf: ASOF });
@@ -331,5 +337,81 @@ describe('The asymmetry, asserted directly', () => {
     }).transitions[0] as Transition;
     expect(guardrail.status).toBe('AUTO_APPLIED');
     expect(guardrail.approver).toBeUndefined();
+  });
+});
+
+describe('MANUAL_OVERRIDE (free_set_mode) — first-class, audited, score untouched', () => {
+  // earned CO_PILOT (baseline rank 2) — a manual SOLO override is ABOVE earned.
+  const earnedCoPilot = { ...operating('CO_PILOT'), lastImpliedRank: 2 };
+
+  it('sets any mode immediately with an audited actor + reason; no approver; score untouched', () => {
+    const r = manualOverride({ ids, state: earnedCoPilot, target: 'SOLO', actor: 'alice', reason: 'launch', asOf: ASOF });
+    expect(r.effectiveMode).toBe('SOLO');
+    const t = r.transitions[0] as Transition;
+    expect(t.trigger).toBe('MANUAL_OVERRIDE');
+    expect(t.status).toBe('APPLIED');
+    expect(t.direction).toBe('PROMOTION'); // SOLO above CO_PILOT
+    expect(t.actor).toBe('alice');
+    expect(t.approver).toBeUndefined(); // actor, NOT approver
+    expect(t.reason).toBe('launch');
+    expect(r.state.lastImpliedRank).toBe(2); // earned baseline preserved (score untouched)
+  });
+
+  it('requires an actor and a reason; rejects SUSPENDED/RETIRED and non-operating targets', () => {
+    expect(() => manualOverride({ ids, state: earnedCoPilot, target: 'SOLO', actor: '', reason: 'x', asOf: ASOF })).toThrow(/actor/i);
+    expect(() => manualOverride({ ids, state: earnedCoPilot, target: 'SOLO', actor: 'a', reason: '', asOf: ASOF })).toThrow(/reason/i);
+    expect(() => manualOverride({ ids, state: { ...operating('SUSPENDED') }, target: 'SOLO', actor: 'a', reason: 'r', asOf: ASOF })).toThrow(/SUSPENDED/i);
+    expect(() => manualOverride({ ids, state: { ...operating('RETIRED') }, target: 'SOLO', actor: 'a', reason: 'r', asOf: ASOF })).toThrow();
+    expect(() => manualOverride({ ids, state: earnedCoPilot, target: 'OBSERVING', actor: 'a', reason: 'r', asOf: ASOF })).toThrow(/operating band/i);
+  });
+
+  describe('the crux — standing divergence holds; a new adverse event still demotes', () => {
+    const overridden = manualOverride({ ids, state: earnedCoPilot, target: 'SOLO', actor: 'alice', reason: 'launch', asOf: ASOF }).state;
+
+    it('HOLDS under the standing gap: flat earned (CO_PILOT) score never auto-undoes the SOLO override', () => {
+      // Three recomputes at the earned CO_PILOT level (below the SOLO mode) — NOT a decline.
+      const run = runLifecycle(ids, overridden, range(3, () => ({ readiness: rr(60), asOf: ASOF })), policy);
+      expect(run.state.effectiveMode).toBe('SOLO'); // standing divergence, not corrected
+      expect(run.transitions.filter((t) => t.direction === 'DEMOTION')).toHaveLength(0);
+    });
+
+    it('STILL auto-demotes on a FRESH score decline (earned score drops a band)', () => {
+      // Earned score declines from CO_PILOT (2) to SHADOW (1) — a real regression below baseline.
+      const s1 = stepLifecycle({ ids, state: overridden, readiness: rr(30), policy, asOf: ASOF });
+      expect(s1.effectiveMode).toBe('SOLO'); // 1-confirm grace
+      const s2 = stepLifecycle({ ids, state: s1.state, readiness: rr(30), policy, asOf: ASOF });
+      expect(s2.effectiveMode).toBe('CO_PILOT'); // auto-demoted despite being manually set
+      expect((s2.transitions[0] as Transition).status).toBe('AUTO_APPLIED');
+      expect((s2.transitions[0] as Transition).trigger).toBe('SCORE_CROSS');
+    });
+
+    it('STILL auto-demotes on a guardrail trip (override is not a safety off-switch)', () => {
+      const r = stepLifecycle({
+        ids,
+        state: overridden,
+        readiness: rr(60),
+        signals: { guardrail: { guardrailId: 'g1', trippedAt: ASOF, reason: 'pii' } },
+        policy,
+        asOf: ASOF,
+      });
+      expect(r.effectiveMode).toBe('SUSPENDED');
+      expect((r.transitions[0] as Transition).trigger).toBe('GUARDRAIL');
+    });
+  });
+
+  it('standing-gap-from-the-start: an override whose FIRST scored data is below-mode HOLDS; only a SUBSEQUENT decline demotes', () => {
+    // No prior baseline (lastImpliedRank undefined) — the first below-mode score is NOT a decline.
+    const fresh = manualOverride({ ids, state: operating('OBSERVING'), target: 'SOLO', actor: 'alice', reason: 'trial', asOf: ASOF }).state;
+    expect(fresh.lastImpliedRank).toBeUndefined();
+
+    const a = stepLifecycle({ ids, state: fresh, readiness: rr(60), policy, asOf: ASOF }); // CO_PILOT-implied, below SOLO
+    expect(a.effectiveMode).toBe('SOLO'); // no prior baseline ⇒ no decline ⇒ holds
+    const b = stepLifecycle({ ids, state: a.state, readiness: rr(60), policy, asOf: ASOF });
+    expect(b.effectiveMode).toBe('SOLO'); // flat ⇒ still holds
+
+    // Now a genuine decline below the established baseline (CO_PILOT → SHADOW).
+    const c = stepLifecycle({ ids, state: b.state, readiness: rr(30), policy, asOf: ASOF });
+    const d = stepLifecycle({ ids, state: c.state, readiness: rr(30), policy, asOf: ASOF });
+    expect(d.effectiveMode).toBe('CO_PILOT'); // the subsequent decline demotes
   });
 });

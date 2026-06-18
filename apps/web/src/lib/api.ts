@@ -208,6 +208,27 @@ export async function removeMember(
   return { ok: res.ok, status: res.status };
 }
 
+/** Free-set an agent×task's mode (MANUAL_OVERRIDE). The signed-in human is forwarded as both
+ *  subject (role lookup) and approver (the recorded actor). API enforces free_set_mode. */
+export async function setMode(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  taskKey: string,
+  mode: string,
+  reason: string,
+  approver?: string,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const url = `${apiUrl}/agents/${encodeURIComponent(agentKey)}/tasks/${encodeURIComponent(taskKey)}/mode`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject, approver),
+    body: JSON.stringify({ mode, reason }),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+}
+
 // ── Phase C1: admin agent management (manage_agents / activate_deactivate) ─────
 export type IdentityDisplayStatus = 'DISCOVERED' | 'ACTIVE' | 'IDLE' | 'DEACTIVATED' | 'RETIRED';
 export interface AdminAgentRow {

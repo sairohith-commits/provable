@@ -97,8 +97,8 @@ function describeTrigger(t: TransitionTrigger): string {
       return 'guardrail';
     case 'SIGNAL_LOSS':
       return 'signal_loss';
-    case 'MANUAL':
-      return 'manual';
+    case 'MANUAL_OVERRIDE':
+      return 'manual_override';
     case 'SCHEDULED':
       return 'scheduled';
     default:
