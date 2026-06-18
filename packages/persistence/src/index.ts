@@ -27,7 +27,9 @@ export type { ScoreRecord } from './mappers.js';
 export { makeRecomputePorts } from './recompute-ports.js';
 export type { RecomputePorts } from './recompute-ports.js';
 export { resolveOrgByApiKey, resolveOrgByClerkOrgId } from './auth.js';
-export { provisionOrg, linkClerkOrg } from './provision.js';
+export { provisionOrg, linkClerkOrg, assignRole } from './provision.js';
+export { membershipRepo, normalizeEmail } from './membership.js';
+export type { MemberRow } from './membership.js';
 export { readModelRepo } from './read-models.js';
 export type {
   RegistryView,

@@ -43,5 +43,6 @@ export async function verifyLocalCredentials(
   // the email was correct.
   const passwordOk = await compare(password, admin.passwordHash);
   if (!emailOk || !passwordOk) return null;
-  return { userId: `local:${admin.email}`, email: admin.email, displayName: 'Local admin' };
+  // The bootstrapped admin's email is verified by construction (operator-configured).
+  return { userId: `local:${admin.email}`, email: admin.email, displayName: 'Local admin', emailVerified: true };
 }

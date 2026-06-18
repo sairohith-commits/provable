@@ -9,7 +9,7 @@ import {
 } from '@clerk/nextjs';
 import { auth } from '@clerk/nextjs/server';
 import type { ReactNode } from 'react';
-import { resolveOrg } from '../../api';
+import { fetchRole, resolveOrg } from '../../api';
 import { buildAuthContext } from '../context';
 import type { AuthProvider, AuthState } from '../types';
 
@@ -28,10 +28,12 @@ export const ClerkAuthProvider: AuthProvider = {
     const orgId = await resolveOrg(clerkOrgId);
     if (orgId === null) return { status: 'no-org' };
     const email = (sessionClaims as { email?: string } | null)?.email ?? null;
-    return {
-      status: 'authenticated',
-      context: buildAuthContext('clerk', { userId, email, displayName: null }, orgId),
-    };
+    // Trust assumption: Clerk verifies emails at sign-up, so the session's primary email is
+    // treated as verified for invite binding.
+    const identity = { userId, email, displayName: null, emailVerified: true };
+    const role = await fetchRole(orgId, userId, email, true);
+    if (role === null) return { status: 'no-access' };
+    return { status: 'authenticated', context: buildAuthContext('clerk', identity, orgId, role) };
   },
 
   // Byte-identical to the pre-Phase-A root layout — Clerk's client-reactive chrome is preserved

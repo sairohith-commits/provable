@@ -137,7 +137,9 @@ function identityFromClaims(claims: Record<string, unknown>): Identity {
       : typeof claims['preferred_username'] === 'string'
         ? (claims['preferred_username'] as string)
         : null;
-  return { userId: sub, email, displayName: name };
+  // Trust the IdP's email_verified claim — an unverified OIDC email must not bind an invite.
+  const emailVerified = claims['email_verified'] === true;
+  return { userId: sub, email, displayName: name, emailVerified };
 }
 
 function requireRedirectUri(): string {

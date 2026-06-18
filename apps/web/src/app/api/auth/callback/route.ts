@@ -37,6 +37,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       email: identity.email,
       name: identity.displayName,
       provider: 'oidc',
+      emailVerified: identity.emailVerified,
       ...(refreshToken !== undefined ? { oidcRefreshToken: refreshToken } : {}),
     });
     const res = NextResponse.redirect(new URL('/', reqUrl), 303);

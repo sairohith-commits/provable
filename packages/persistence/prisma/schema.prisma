@@ -86,6 +86,14 @@ enum ScoreStatus {
   INSUFFICIENT
 }
 
+// RBAC roles (Phase B) — mirrors @provable/contracts ROLES (lockstep-tested).
+enum Role {
+  OWNER
+  APPROVER
+  OPERATOR
+  VIEWER
+}
+
 // ── Entities ───────────────────────────────────────────────────────────────────
 model Org {
   id           String  @id // OrgId (tenant)
@@ -101,8 +109,32 @@ model Org {
   verdictEvents VerdictEvent[]
   transitions   Transition[]
   scores        Score[]
+  memberships   Membership[]
 
   @@map("org")
+}
+
+// RBAC membership (Phase B) — who may do what in an org. Tenant-scoped by orgId (RLS).
+// An invite is created by `email` with `subject` NULL; first login binds `subject` to the
+// provider's verified subject. (orgId, subject) is unique when bound; NULLs are distinct in
+// Postgres so multiple pending invites coexist.
+model Membership {
+  id               String    @id @default(uuid())
+  orgId            String
+  email            String // lowercased invite identifier + display
+  subject          String? // provider subject (Clerk userId | OIDC sub | local:<email>), bound on first login
+  role             Role
+  invitedBySubject String? // who issued the invite (audit)
+  createdAt        DateTime  @default(now())
+  boundAt          DateTime? // when subject was bound
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, email])
+  @@unique([orgId, subject])
+  @@index([orgId])
+  @@index([orgId, subject])
+  @@map("membership")
 }
 
 model Agent {

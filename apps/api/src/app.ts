@@ -1,9 +1,11 @@
-import type { AgentKey, OrgId, TaskKey } from '@provable/contracts';
+import type { AgentKey, OrgId, Permission, Role, TaskKey } from '@provable/contracts';
+import { ROLES, can } from '@provable/contracts';
 import { DEFAULT_GOVERNANCE_POLICY, computeReadiness, stepLifecycle } from '@provable/core';
 import type { TaskScope } from '@provable/core';
 import {
   agentRepo,
   makeRecomputePorts,
+  membershipRepo,
   orgRepo,
   readModelRepo,
   resolveOrgByClerkOrgId,
@@ -79,10 +81,53 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     return orgId;
   }
 
-  /** Reads: internal (web, Clerk-derived org) OR machine-key. */
+  /** Authoritatively resolve the internal caller's role from membership(orgId, subject).
+   *  Returns null when there is no subject or no assigned membership (= no access). */
+  async function resolveRole(orgId: OrgId, subject: string | undefined): Promise<Role | null> {
+    if (subject === undefined || subject.length === 0) return null;
+    return withTenant(orgId, (tx) => membershipRepo.findRoleBySubject(tx, orgId, subject));
+  }
+
+  /**
+   * Gate a MUTATION on a specific permission. Deny-by-default and API-AUTHORITATIVE: the role
+   * is re-derived server-side from the membership store (never trusted from a header). 401 if
+   * not an internal caller; 403 if unassigned or the role lacks the permission. Machine keys
+   * never produce an internal context, so they can never reach a governance mutation.
+   */
+  async function requireInternalPermission(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    permission: Permission,
+  ): Promise<{ ctx: NonNullable<ReturnType<typeof resolveInternal>>; role: Role } | null> {
+    const internal = resolveInternal(headersOf(req));
+    if (internal === null) {
+      await reply.code(401).send({ error: 'internal auth required' });
+      return null;
+    }
+    const role = await resolveRole(internal.orgId, internal.subject);
+    if (role === null) {
+      await reply.code(403).send({ error: 'no role assigned' });
+      return null;
+    }
+    if (!can(role, permission)) {
+      await reply.code(403).send({ error: 'forbidden', need: permission });
+      return null;
+    }
+    return { ctx: internal, role };
+  }
+
+  /** Reads: internal (web, role-gated — ANY assigned role) OR machine-key (agents, unchanged). */
   async function requireReadOrg(req: FastifyRequest, reply: FastifyReply): Promise<OrgId | null> {
     const internal = resolveInternal(headersOf(req));
-    if (internal !== null) return internal.orgId;
+    if (internal !== null) {
+      // Internal (human) read path requires an assigned role (deny-by-default).
+      const role = await resolveRole(internal.orgId, internal.subject);
+      if (role === null) {
+        await reply.code(403).send({ error: 'no role assigned' });
+        return null;
+      }
+      return internal.orgId;
+    }
     // A bad/partial internal token with no machine key falls through to machine-key auth,
     // which 401s — so a malformed internal call is rejected, not silently downgraded.
     const orgId = await authenticate(extractKey(headersOf(req)));
@@ -259,11 +304,9 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   // Mints a new key, replaces the org's hash+prefix, returns the plaintext ONCE. The old
   // key dies immediately. A MACHINE KEY CANNOT reach this — there is no internal context.
   app.post('/org/api-key/rotate', async (req, reply) => {
-    const internal = resolveInternal(headersOf(req));
-    if (internal === null) {
-      return reply.code(401).send({ error: 'internal auth required' });
-    }
-    const orgId = internal.orgId;
+    const auth = await requireInternalPermission(req, reply, 'manage_keys');
+    if (auth === null) return;
+    const orgId = auth.ctx.orgId;
     const k = generateApiKey();
     await withTenant(orgId, (tx) => orgRepo.setApiKey(tx, orgId, k.prefix, k.hash));
     return reply.send({ key: k.key, prefix: k.prefix }); // shown ONCE; never stored in clear
@@ -285,11 +328,11 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
 
   // ── Approve a pending promotion (Clerk-authed human path ONLY) ──────────────
   app.post('/agents/:agentKey/tasks/:taskKey/approve', async (req, reply) => {
-    // INTERNAL ONLY: a machine key cannot reach this — that is the moat-integrity flip.
-    const internal = resolveInternal(headersOf(req));
-    if (internal === null) {
-      return reply.code(401).send({ error: 'internal auth required' });
-    }
+    // INTERNAL ONLY + permission-gated: a machine key cannot reach this (no internal context),
+    // and an internal caller needs the approve_transition permission (OWNER/APPROVER).
+    const auth = await requireInternalPermission(req, reply, 'approve_transition');
+    if (auth === null) return;
+    const internal = auth.ctx;
     if (internal.approver === undefined || internal.approver.length === 0) {
       return reply.code(400).send({ error: 'approver required' });
     }
@@ -334,5 +377,96 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     return reply.send(result);
   });
 
+  // ── RBAC: the caller's own role (Phase B) ────────────────────────────────────
+  // Internal-only, EXEMPT from permission checks: any authenticated internal request may ask
+  // "what is my role?" and gets role-or-null. This is also where a pending invite binds to the
+  // provider subject on first login — but ONLY when the web forwards a provider-VERIFIED email
+  // (x-provable-email-verified: true). Clerk/local emails are verified by construction; OIDC
+  // must assert email_verified. An unverified email can never claim an invite.
+  app.get('/me', async (req, reply) => {
+    const internal = resolveInternal(headersOf(req));
+    if (internal === null) return reply.code(401).send({ error: 'internal auth required' });
+    const subject = internal.subject;
+    if (subject === undefined || subject.length === 0) return reply.send({ role: null });
+    const h = headersOf(req);
+    const email = typeof h['x-provable-email'] === 'string' ? (h['x-provable-email'] as string) : null;
+    const emailVerified = h['x-provable-email-verified'] === 'true';
+    const role = await withTenant(internal.orgId, (tx) =>
+      membershipRepo.resolveOrBind(tx, internal.orgId, subject, email, emailVerified),
+    );
+    return reply.send({ role });
+  });
+
+  // ── RBAC: people management (manage_people = OWNER) ──────────────────────────
+  app.get('/org/members', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_people');
+    if (auth === null) return;
+    const members = await withTenant(auth.ctx.orgId, (tx) => membershipRepo.list(tx, auth.ctx.orgId));
+    return reply.send({ members });
+  });
+
+  app.post('/org/members', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_people');
+    if (auth === null) return;
+    const { email, role } = (req.body ?? {}) as { email?: string; role?: string };
+    if (typeof email !== 'string' || email.length === 0) {
+      return reply.code(400).send({ error: 'email required' });
+    }
+    if (!isRole(role)) return reply.code(400).send({ error: 'valid role required', roles: ROLES });
+    await withTenant(auth.ctx.orgId, (tx) =>
+      membershipRepo.invite(tx, auth.ctx.orgId, email, role, auth.ctx.subject ?? 'unknown'),
+    );
+    return reply.send({ ok: true });
+  });
+
+  app.patch('/org/members/:email', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_people');
+    if (auth === null) return;
+    const { email } = req.params as { email: string };
+    const { role } = (req.body ?? {}) as { role?: string };
+    if (!isRole(role)) return reply.code(400).send({ error: 'valid role required', roles: ROLES });
+    const orgId = auth.ctx.orgId;
+    const result = await withTenant(orgId, async (tx) => {
+      const existing = await membershipRepo.getByEmail(tx, orgId, email);
+      if (existing === null) return { notFound: true as const };
+      // Last-Owner guard: never demote the final OWNER.
+      if (existing.role === 'OWNER' && role !== 'OWNER') {
+        const owners = await membershipRepo.countOwners(tx, orgId);
+        if (owners <= 1) return { lastOwner: true as const };
+      }
+      await membershipRepo.setRole(tx, orgId, email, role);
+      return { ok: true as const };
+    });
+    if ('notFound' in result) return reply.code(404).send({ error: 'no such member' });
+    if ('lastOwner' in result) return reply.code(409).send({ error: 'cannot demote the last owner' });
+    return reply.send({ ok: true });
+  });
+
+  app.delete('/org/members/:email', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_people');
+    if (auth === null) return;
+    const { email } = req.params as { email: string };
+    const orgId = auth.ctx.orgId;
+    const result = await withTenant(orgId, async (tx) => {
+      const existing = await membershipRepo.getByEmail(tx, orgId, email);
+      if (existing === null) return { notFound: true as const };
+      // Last-Owner guard: never remove the final OWNER.
+      if (existing.role === 'OWNER') {
+        const owners = await membershipRepo.countOwners(tx, orgId);
+        if (owners <= 1) return { lastOwner: true as const };
+      }
+      await membershipRepo.remove(tx, orgId, email);
+      return { ok: true as const };
+    });
+    if ('notFound' in result) return reply.code(404).send({ error: 'no such member' });
+    if ('lastOwner' in result) return reply.code(409).send({ error: 'cannot remove the last owner' });
+    return reply.send({ ok: true });
+  });
+
   return app;
+}
+
+/** Narrow an arbitrary string to a valid Role (deny-by-default for unknown values). */
+function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && (ROLES as readonly string[]).includes(value);
 }

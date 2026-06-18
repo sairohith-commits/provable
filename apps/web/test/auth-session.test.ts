@@ -21,6 +21,7 @@ const payload = {
   email: 'a@b.com',
   name: 'Agent Smith',
   provider: 'local' as const,
+  emailVerified: true,
 };
 
 describe('session lifecycle', () => {

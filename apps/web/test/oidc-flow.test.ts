@@ -31,6 +31,7 @@ async function idToken(claims: { sub: string; email: string; name: string; nonce
   const now = Math.floor(Date.now() / 1000);
   const jwt = new SignJWT({
     email: claims.email,
+    email_verified: true,
     name: claims.name,
     ...(claims.nonce !== undefined ? { nonce: claims.nonce } : {}),
   })
@@ -161,7 +162,12 @@ describe('OIDC Authorization Code + PKCE against a mock issuer', () => {
       nonce: challenge.nonce,
       codeVerifier: challenge.codeVerifier,
     });
-    expect(identity).toEqual({ userId: 'oidc-user-7', email: 'dev@corp.example', displayName: 'Dev User' });
+    expect(identity).toEqual({
+      userId: 'oidc-user-7',
+      email: 'dev@corp.example',
+      displayName: 'Dev User',
+      emailVerified: true,
+    });
     expect(refreshToken).toBeTruthy();
   });
 

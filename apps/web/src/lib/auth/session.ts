@@ -13,12 +13,15 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 8;
 /** Re-issue when fewer than this many seconds remain (sliding refresh window). */
 export const SESSION_REFRESH_THRESHOLD_SECONDS = 60 * 60;
 
-/** The verified identity carried by a session. `oidcRefreshToken` enables IdP token refresh. */
+/** The verified identity carried by a session. `oidcRefreshToken` enables IdP token refresh.
+ *  `emailVerified` gates invite binding (Phase B): only a provider-verified email may claim
+ *  a pending invite. Local + Clerk are verified by construction; OIDC carries email_verified. */
 export interface SessionPayload {
   readonly sub: string;
   readonly email: string | null;
   readonly name: string | null;
   readonly provider: AuthProviderType;
+  readonly emailVerified: boolean;
   readonly oidcRefreshToken?: string;
 }
 
@@ -40,6 +43,7 @@ export async function createSession(
     email: payload.email,
     name: payload.name,
     provider: payload.provider,
+    ev: payload.emailVerified,
     ...(payload.oidcRefreshToken !== undefined ? { rt: payload.oidcRefreshToken } : {}),
   })
     .setProtectedHeader({ alg: ALG })
@@ -68,6 +72,7 @@ export async function readSession(
       email: typeof payload['email'] === 'string' ? payload['email'] : null,
       name: typeof payload['name'] === 'string' ? payload['name'] : null,
       provider,
+      emailVerified: payload['ev'] === true,
       ...(typeof payload['rt'] === 'string' ? { oidcRefreshToken: payload['rt'] } : {}),
     };
   } catch {

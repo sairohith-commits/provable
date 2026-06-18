@@ -1,5 +1,6 @@
 'use client';
 
+import { type Role, can } from '@provable/contracts';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CostView,
@@ -94,10 +95,13 @@ function KpiRow({ summary }: { summary: SummaryView }) {
   );
 }
 
-export function OverviewClient({ initial }: { initial: OverviewData }) {
+export function OverviewClient({ initial, role }: { initial: OverviewData; role: Role }) {
   const [data, setData] = useState<OverviewData>(initial);
   const [persona, setPersona] = useState<Persona>('All');
   const [pending, setPending] = useState<string | null>(null);
+  // UX-only (NOT the security boundary): hide the Approve control for roles without the
+  // permission. The API independently enforces approve_transition on every call.
+  const canApprove = can(role, 'approve_transition');
 
   const refresh = useCallback(async () => {
     const res = await fetch('/api/overview', { cache: 'no-store' });
@@ -141,6 +145,7 @@ export function OverviewClient({ initial }: { initial: OverviewData }) {
         ranked={ranked}
         pending={pending}
         onApprove={approve}
+        canApprove={canApprove}
       />
     ),
     governance: <GovernanceSection key="governance" transitions={data.transitions} />,
@@ -182,10 +187,12 @@ function ReadinessSection({
   ranked,
   pending,
   onApprove,
+  canApprove,
 }: {
   ranked: ReturnType<typeof sortReadinessRows>;
   pending: string | null;
   onApprove: (a: string, t: string) => void;
+  canApprove: boolean;
 }) {
   return (
     <section className="pillar" data-section="readiness">
@@ -213,7 +220,7 @@ function ReadinessSection({
                   </span>
                 </div>
                 <ReadinessLadder score={row.score} effectiveMode={row.effectiveMode} />
-                {attention.pendingApproval ? (
+                {attention.pendingApproval && canApprove ? (
                   <button
                     className="approve"
                     disabled={pending === id}

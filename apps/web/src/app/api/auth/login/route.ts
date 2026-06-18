@@ -25,6 +25,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     email: identity.email,
     name: identity.displayName,
     provider: 'local',
+    emailVerified: identity.emailVerified,
   });
   const res = NextResponse.redirect(new URL('/', req.url), 303);
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(SESSION_TTL_SECONDS));

@@ -4,9 +4,9 @@ import { OverviewClient } from '@/components/overview-client';
 
 export const dynamic = 'force-dynamic';
 
-// Provider-agnostic three-way gate (same states the Clerk UI showed before): signed-out →
-// sign-in prompt; authenticated-but-no-org (Clerk multi-tenant) → not-linked prompt; otherwise
-// the live overview.
+// Provider-agnostic gate (same states the Clerk UI showed before, plus Phase B no-access):
+// signed-out → sign-in prompt; no-org (Clerk multi-tenant) → not-linked; no-access (assigned
+// no role) → ask-an-owner; otherwise the live overview.
 export default async function Page() {
   const state = await getAuthState();
   if (state.status === 'signed-out') {
@@ -19,6 +19,13 @@ export default async function Page() {
       </div>
     );
   }
-  const initial = await loadOverview(state.context.orgId);
-  return <OverviewClient initial={initial} />;
+  if (state.status === 'no-access') {
+    return (
+      <div className="empty card glass">
+        Your account isn’t assigned to this workspace yet. Ask an Owner to grant you access.
+      </div>
+    );
+  }
+  const initial = await loadOverview(state.context.orgId, state.context.userId);
+  return <OverviewClient initial={initial} role={state.context.role} />;
 }

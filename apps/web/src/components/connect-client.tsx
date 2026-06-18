@@ -1,5 +1,6 @@
 'use client';
 
+import { type Role, can } from '@provable/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { maskedKey, quickstart } from '@/lib/connect';
 import type { OverviewData } from '@/lib/types';
@@ -10,11 +11,15 @@ export function ConnectClient({
   apiUrl,
   keyPrefix,
   initialAgentCount,
+  role,
 }: {
   apiUrl: string;
   keyPrefix: string | null;
   initialAgentCount: number;
+  role: Role;
 }) {
+  // UX-only: the API enforces manage_keys on rotate regardless of this.
+  const canManageKeys = can(role, 'manage_keys');
   const [newKey, setNewKey] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,9 +103,11 @@ export function ConnectClient({
           <code className="key-prefix" data-key-prefix>
             {maskedKey(keyPrefix)}
           </code>
-          <button className="approve" onClick={rotate} disabled={rotating}>
-            {rotating ? 'Rotating…' : 'Rotate key'}
-          </button>
+          {canManageKeys ? (
+            <button className="approve" onClick={rotate} disabled={rotating}>
+              {rotating ? 'Rotating…' : 'Rotate key'}
+            </button>
+          ) : null}
         </div>
         <p className="disclosure">
           The existing key is hashed at rest and cannot be shown again. Rotating reveals a new key

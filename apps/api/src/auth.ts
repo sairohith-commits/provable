@@ -67,12 +67,19 @@ export function internalTokenValid(presented: string | undefined): boolean {
 export interface InternalContext {
   readonly orgId: OrgId;
   readonly approver: string | undefined;
+  /** Stable provider subject (AuthContext.userId) — the AUTHORITATIVE key the API uses to
+   *  re-derive the caller's RBAC role from the membership store (Phase B). */
+  readonly subject: string | undefined;
 }
 
 /**
  * Resolve the internal caller. Requires a valid internal token AND an org id (the web
  * sends the Provable orgId it resolved from the verified Clerk session — never client
  * input). Returns null when the token is absent/invalid or the org id is missing.
+ *
+ * `subject` is carried for RBAC role resolution. Note: the API does NOT trust a web-supplied
+ * role — `x-provable-role` (if present) is a non-authoritative UX hint only; enforcement
+ * re-derives the role from membership(orgId, subject). See app.ts requireInternalPermission.
  */
 export function resolveInternal(headers: Record<string, unknown>): InternalContext | null {
   const token = headers['x-provable-internal-token'];
@@ -80,7 +87,12 @@ export function resolveInternal(headers: Record<string, unknown>): InternalConte
   const orgId = headers['x-provable-org-id'];
   if (typeof orgId !== 'string' || orgId.length === 0) return null;
   const approver = headers['x-provable-approver'];
-  return { orgId: orgId as OrgId, approver: typeof approver === 'string' ? approver : undefined };
+  const subject = headers['x-provable-subject'];
+  return {
+    orgId: orgId as OrgId,
+    approver: typeof approver === 'string' ? approver : undefined,
+    subject: typeof subject === 'string' ? subject : undefined,
+  };
 }
 
 /** True iff a valid internal token is present (org id not required) — for /resolve-org. */

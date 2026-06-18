@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentKey, ExternalRef, OrgId, TaskKey } from '@provable/contracts';
-import { decisionRepo, disconnect, withTenant } from '../src/index.js';
+import { decisionRepo, disconnect, membershipRepo, orgRepo, withTenant } from '../src/index.js';
 import { adminClient, appClient, disconnectClients, resetDb } from './helpers.js';
 
 const A = 'org_A' as OrgId;
@@ -58,5 +58,27 @@ describe('Two-tenant RLS isolation (DB-enforced)', () => {
     const aAgents = await withTenant(A, (tx) => tx.agent.findMany());
     expect(aAgents.every((r) => r.orgId === A)).toBe(true);
     expect(aAgents).toHaveLength(1);
+  });
+
+  it('membership (RBAC) is tenant-isolated like every other table', async () => {
+    // Ensure the org rows exist first (membership.orgId FK).
+    await withTenant(A, async (tx) => {
+      await orgRepo.ensure(tx, A);
+      await membershipRepo.invite(tx, A, 'owner@a.test', 'OWNER', 'seed');
+    });
+    await withTenant(B, async (tx) => {
+      await orgRepo.ensure(tx, B);
+      await membershipRepo.invite(tx, B, 'owner@b.test', 'OWNER', 'seed');
+    });
+
+    // Each tenant sees only its own members.
+    const aMembers = await withTenant(A, (tx) => membershipRepo.list(tx, A));
+    expect(aMembers.map((m) => m.email)).toEqual(['owner@a.test']);
+    const bMembers = await withTenant(B, (tx) => membershipRepo.list(tx, B));
+    expect(bMembers.map((m) => m.email)).toEqual(['owner@b.test']);
+
+    // DB-enforced: superuser (RLS bypass) sees BOTH; no-context app query sees nothing.
+    expect(await adminClient.membership.findMany()).toHaveLength(2);
+    expect(await appClient.membership.findMany()).toEqual([]);
   });
 });
