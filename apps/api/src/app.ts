@@ -15,6 +15,7 @@ import {
   withTenant,
 } from '@provable/persistence';
 import { generateApiKey } from './auth.js';
+import { registerConnector } from './connector.js';
 import { registerGateway } from './gateway.js';
 import {
   deriveDisplayStatus,
@@ -277,6 +278,11 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   // ── Phase C2: gateway proxy (Tier 1, Observe-only). Machine-key data path; never reaches the
   //    human onboarding actions. Registered here as the interim home (refactors to adapters/gateway).
   registerGateway(app);
+
+  // ── Phase C3: connector data path (Tier 2). Machine-key auth; the reference connector maps the
+  //    agent's existing events → canonical Decisions, ingested via recompute. Mapping lives in
+  //    @provable/adapters (anti-corruption boundary); the tenant is the machine-key org.
+  registerConnector(app);
 
   // KPI summary: composed REAL counts + the ROI projection (assumptions attached). Honest
   // zeros on a fresh org; the api key PREFIX (lookup handle, not the secret) for the Connect view.

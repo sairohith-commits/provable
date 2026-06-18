@@ -1,6 +1,6 @@
 import { GATEWAY_BASE_PATH, GATEWAY_HEADERS } from '@provable/contracts';
 import { describe, expect, it } from 'vitest';
-import { gatewayRecipe, quickstart } from '../src/lib/connect';
+import { connectorRecipe, gatewayRecipe, quickstart } from '../src/lib/connect';
 import { TIERS, tier } from '../src/lib/onboarding-tiers';
 
 describe('three-tier onboarding presentation', () => {
@@ -10,13 +10,27 @@ describe('three-tier onboarding presentation', () => {
     expect(tier('sdk').fidelity.toLowerCase()).toContain('fidelity');
   });
 
-  it('gateway + sdk are actionable (recipe); adapter is presented-only, never faked', () => {
-    expect(tier('gateway').actionable).toBe(true);
-    expect(tier('gateway').mode).toBe('recipe');
-    expect(tier('sdk').actionable).toBe(true);
-    expect(tier('sdk').mode).toBe('recipe');
-    expect(tier('adapter').actionable).toBe(false); // forward-pointered, not wired
-    expect(tier('adapter').mode).toBe('pointer');
+  it('all three tiers are actionable with a concrete recipe (Tier 2 flipped in C3)', () => {
+    for (const id of ['gateway', 'adapter', 'sdk'] as const) {
+      expect(tier(id).actionable).toBe(true);
+      expect(tier(id).mode).toBe('recipe');
+    }
+  });
+});
+
+describe('connector recipe (Tier 2, Phase C3)', () => {
+  const recipe = connectorRecipe('https://api.example.test', 'pvb_abc_secret');
+
+  it('targets the connector path with machine-key auth', () => {
+    expect(recipe).toContain('https://api.example.test/connector/events');
+    expect(recipe).toContain('Authorization: Bearer pvb_abc_secret');
+  });
+
+  it('documents the required stable id (externalRef) and honest fidelity split', () => {
+    expect(recipe).toContain('externalRef');
+    expect(recipe.toLowerCase()).toContain('stable');
+    expect(recipe).toContain('Observe-only');
+    expect(recipe).toContain('N/A');
   });
 });
 

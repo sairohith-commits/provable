@@ -39,6 +39,38 @@ client = OpenAI(
 }
 
 /**
+ * Tier 2 — Connector recipe (Phase C3, no agent code). Deliver the events your agent ALREADY
+ * emits to the reference connector; a declarative mapping turns source fields into canonical
+ * Decisions. Verdict present → full governance (scored); absent → Observe-only (readiness N/A).
+ * The source MUST supply a stable id (mapped to externalRef) — redelivery is deduped on it.
+ */
+export function connectorRecipe(apiUrl: string, key: string): string {
+  return `# Tier 2 - Connector (no agent code) -> full governance if your data has verdicts.
+# POST the events your agent already emits; a declarative mapping does the rest.
+
+curl ${apiUrl}/connector/events \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "content-type: application/json" \\
+  -d '[
+    {
+      "agent": "support-bot",          # -> agentKey
+      "task": "classify",              # -> taskKey
+      "id": "ticket-4821",             # -> externalRef (REQUIRED: a STABLE id; dedups redelivery)
+      "input": {"subject": "refund"},  # -> action (opaque)
+      "confidence": 0.92,              # -> confidence (optional)
+      "verdict": "approved",           # -> ACCEPTED  (omit -> Observe-only, readiness N/A)
+      "outcome": "success"             # -> SUCCESS   (optional)
+    }
+  ]'
+
+# Field mapping (default; override per deployment via CONNECTOR_MAPPING):
+#   agent->agentKey  task->taskKey  id->externalRef  input->action  confidence->confidence
+#   verdict: approved|accepted->ACCEPTED  overridden->OVERRIDDEN  escalated->ESCALATED  failed->FAILED
+#   outcome: success->SUCCESS  partial->PARTIAL  failure->FAILURE
+# Events WITHOUT a recognized verdict are ingested as Observe-only (cost/activity, no score).`;
+}
+
+/**
  * Tier 3 — SDK quickstart. Mirrors the actual provable_sdk surface (Client.register /
  * Client.track with Verdict/Outcome/Source) — highest fidelity. Shows ONLY the real SDK path;
  * direct REST is the same profile minus the dependency.

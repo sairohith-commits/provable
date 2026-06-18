@@ -24,8 +24,8 @@ export const TIERS: readonly Tier[] = [
     id: 'adapter',
     title: 'Tier 2 · Adapter',
     fidelity: 'Full governance — no agent code',
-    actionable: false,
-    mode: 'pointer',
+    actionable: true, // Phase C3: the adapter framework + reference connector make this real
+    mode: 'recipe',
   },
   {
     id: 'sdk',

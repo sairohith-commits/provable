@@ -86,13 +86,22 @@ module.exports = {
       },
     },
 
-    // ── adapters never reach into core internals ────────────────────────────
+    // ── adapters speak ONLY the canonical contract (among workspace pkgs) ─────
+    // An adapter is an anti-corruption layer: it maps foreign data to canonical events and
+    // nothing more. Among internal packages it may import @provable/contracts ONLY — never core
+    // (no engine internals), persistence (no DB), api/web (no composition root). npm deps (zod)
+    // and Node built-ins are allowed — the boundary is about WORKSPACE coupling, not all imports.
+    // (Scoped to src/ so tests may use the runner.) PROVABLE_CORE_ARCHITECTURE.md §3/§4.
     {
       name: 'adapters-only-contracts',
       severity: 'error',
-      comment: 'adapters speak only the canonical contract; never core internals (§3).',
-      from: { path: '^packages/adapters/' },
-      to: { path: '^packages/core/' },
+      comment:
+        'adapters import @provable/contracts ONLY among workspace packages; never core, ' +
+        'persistence, api, or web (§3/§4). The inversion — core↛adapters — is enforced separately.',
+      from: { path: '^packages/adapters/src/' },
+      to: {
+        path: '(^packages/(core|persistence)/|^apps/|@provable/(core|persistence|api|web))',
+      },
     },
 
     // ── persistence may import contracts + core (ports) — NOT adapters/apps ──

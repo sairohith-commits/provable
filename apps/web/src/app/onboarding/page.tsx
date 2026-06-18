@@ -1,6 +1,6 @@
 import { can } from '@provable/contracts';
 import { publicApiUrl } from '@/lib/api';
-import { gatewayRecipe, quickstart } from '@/lib/connect';
+import { connectorRecipe, gatewayRecipe, quickstart } from '@/lib/connect';
 import { getAuthContext } from '@/lib/auth';
 import { tier } from '@/lib/onboarding-tiers';
 
@@ -18,6 +18,7 @@ export default async function OnboardingPage() {
 
   const apiUrl = publicApiUrl();
   const gateway = gatewayRecipe(apiUrl, '<YOUR_PROVABLE_KEY>');
+  const connector = connectorRecipe(apiUrl, '<YOUR_PROVABLE_KEY>');
   const sdk = quickstart(apiUrl, '<YOUR_API_KEY>');
 
   return (
@@ -50,7 +51,7 @@ export default async function OnboardingPage() {
         </pre>
       </section>
 
-      {/* Tier 2 — Adapter: PRESENTED ONLY (framework is C3). Not faked. */}
+      {/* Tier 2 — Adapter: ACTIONABLE in C3 via the reference connector. */}
       <section className="tier card glass" data-tier="adapter" data-fidelity="governed" data-actionable={String(tier('adapter').actionable)}>
         <header className="tier-head">
           <h2>{tier('adapter').title}</h2>
@@ -60,13 +61,13 @@ export default async function OnboardingPage() {
         </header>
         <p>
           If your existing system already records outcomes with verdicts (a review queue, a
-          ticketing tool), an adapter maps them to Provable with <strong>no changes to your
-          agent</strong> — full governance, including readiness.
+          ticketing tool), the connector maps them to Provable with <strong>no changes to your
+          agent</strong> — full governance, including readiness. Deliver the events you already
+          emit; a declarative mapping does the rest.
         </p>
-        <p className="forward-pointer" data-forward-pointer>
-          Adapters arrive with the adapter framework (Phase C3). Not yet available — this tier is
-          presented so you can plan for it, not wired here.
-        </p>
+        <pre className="recipe" data-recipe="connector">
+          {connector}
+        </pre>
       </section>
 
       {/* Tier 3 — SDK: minimal code, highest fidelity. FULLY ACTIONABLE. */}
