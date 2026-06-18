@@ -1,12 +1,12 @@
-import type { AgentKey, OrgId, Permission, Role, TaskKey } from '@provable/contracts';
+import type { AgentIdentityState, AgentKey, OrgId, Permission, Role, TaskKey } from '@provable/contracts';
 import { ROLES, can } from '@provable/contracts';
-import { DEFAULT_GOVERNANCE_POLICY, computeReadiness, stepLifecycle } from '@provable/core';
-import type { TaskScope } from '@provable/core';
+import { DEFAULT_GOVERNANCE_POLICY, computeReadiness, stepLifecycle, transitionIdentity } from '@provable/core';
+import type { IdentityEvent, TaskScope } from '@provable/core';
 import {
   agentRepo,
+  apiKeyRepo,
   makeRecomputePorts,
   membershipRepo,
-  orgRepo,
   readModelRepo,
   resolveOrgByClerkOrgId,
   scoreRepo,
@@ -15,7 +15,7 @@ import {
   withTenant,
 } from '@provable/persistence';
 import { generateApiKey } from './auth.js';
-import { deriveIdentityState, deriveRoi, IDENTITY_POLICY } from './views.js';
+import { deriveDisplayStatus, deriveIdentityState, deriveRoi, IDENTITY_POLICY } from './views.js';
 import Fastify from 'fastify';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -300,15 +300,19 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     });
   });
 
-  // ── Clerk-authed machine-key ROTATE (the SAME human/internal path as approve) ────────
-  // Mints a new key, replaces the org's hash+prefix, returns the plaintext ONCE. The old
-  // key dies immediately. A MACHINE KEY CANNOT reach this — there is no internal context.
+  // ── Connect-page ROTATE (single-active-key semantics, on the multi-key table) ────────
+  // Mints a new key and revokes EVERY other active key for the org, returning the plaintext
+  // ONCE. The old key dies immediately (auth_resolve_org ignores revoked keys). A MACHINE KEY
+  // CANNOT reach this — there is no internal context. Same manage_keys gate as the C1 keys.
   app.post('/org/api-key/rotate', async (req, reply) => {
     const auth = await requireInternalPermission(req, reply, 'manage_keys');
     if (auth === null) return;
     const orgId = auth.ctx.orgId;
     const k = generateApiKey();
-    await withTenant(orgId, (tx) => orgRepo.setApiKey(tx, orgId, k.prefix, k.hash));
+    await withTenant(orgId, async (tx) => {
+      await apiKeyRepo.mint(tx, orgId, k.prefix, k.hash, 'rotated');
+      await apiKeyRepo.revokeOthers(tx, orgId, k.prefix);
+    });
     return reply.send({ key: k.key, prefix: k.prefix }); // shown ONCE; never stored in clear
   });
 
@@ -460,6 +464,141 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     });
     if ('notFound' in result) return reply.code(404).send({ error: 'no such member' });
     if ('lastOwner' in result) return reply.code(409).send({ error: 'cannot remove the last owner' });
+    return reply.send({ ok: true });
+  });
+
+  // ── Phase C1: admin agent management (identity machine + keys) ───────────────
+  // Agent IDENTITY only — never the autonomy machine. Each route is permission-gated exactly
+  // like Phase B; machine keys can't reach any of these (no internal context → 401).
+
+  /** Admin agent list: stored + displayed identity state + the Idle/Deactivated label. */
+  app.get('/admin/agents', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_agents');
+    if (auth === null) return;
+    const asOf = new Date().toISOString();
+    const view = await withTenant(auth.ctx.orgId, (tx) => readModelRepo.registry(tx));
+    const agents = view.agents.map((a) => ({
+      agentKey: a.agentKey,
+      displayName: a.displayName,
+      identityState: deriveIdentityState(a, asOf),
+      displayStatus: deriveDisplayStatus(a, asOf),
+      lastSeen: a.lastSeen,
+    }));
+    return reply.send({ agents, policy: IDENTITY_POLICY });
+  });
+
+  /** Provision (pre-register) an agent. Coexists with self-register: the SDK's first call on
+   *  this agentKey simply activates the existing DISCOVERED row. 409 if it already exists. */
+  app.post('/admin/agents', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_agents');
+    if (auth === null) return;
+    const { agentKey, displayName } = (req.body ?? {}) as { agentKey?: string; displayName?: string };
+    if (typeof agentKey !== 'string' || agentKey.length === 0) {
+      return reply.code(400).send({ error: 'agentKey required' });
+    }
+    const orgId = auth.ctx.orgId;
+    const result = await withTenant(orgId, async (tx) => {
+      if ((await agentRepo.find(tx, orgId, agentKey as AgentKey)) !== null) {
+        return { conflict: true as const };
+      }
+      await agentRepo.ensure(tx, orgId, agentKey as AgentKey); // DISCOVERED until first contact
+      if (typeof displayName === 'string' && displayName.length > 0) {
+        await agentRepo.setDisplayName(tx, orgId, agentKey as AgentKey, displayName);
+      }
+      return { ok: true as const };
+    });
+    if ('conflict' in result) return reply.code(409).send({ error: 'agent already exists' });
+    return reply.send({ ok: true, agentKey, identityState: 'DISCOVERED' });
+  });
+
+  /** Rename = set displayName (agentKey is immutable — never renamed). */
+  app.patch('/admin/agents/:agentKey', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_agents');
+    if (auth === null) return;
+    const { agentKey } = req.params as { agentKey: string };
+    const { displayName } = (req.body ?? {}) as { displayName?: string };
+    if (typeof displayName !== 'string' || displayName.length === 0) {
+      return reply.code(400).send({ error: 'displayName required' });
+    }
+    const orgId = auth.ctx.orgId;
+    const ok = await withTenant(orgId, async (tx) => {
+      if ((await agentRepo.find(tx, orgId, agentKey as AgentKey)) === null) return false;
+      await agentRepo.setDisplayName(tx, orgId, agentKey as AgentKey, displayName);
+      return true;
+    });
+    if (!ok) return reply.code(404).send({ error: 'no such agent' });
+    return reply.send({ ok: true, agentKey, displayName });
+  });
+
+  // Identity transitions through core's pure machine — no new states, no autonomy touch.
+  const identityAction = (
+    path: string,
+    permission: Permission,
+    event: IdentityEvent,
+  ): void => {
+    app.post(`/admin/agents/:agentKey/${path}`, async (req, reply) => {
+      const auth = await requireInternalPermission(req, reply, permission);
+      if (auth === null) return;
+      const { agentKey } = req.params as { agentKey: string };
+      const orgId = auth.ctx.orgId;
+      const result = await withTenant(orgId, async (tx) => {
+        const agent = await agentRepo.find(tx, orgId, agentKey as AgentKey);
+        if (agent === null) return { notFound: true as const };
+        const next: AgentIdentityState = transitionIdentity(agent.identityState, event);
+        if (next !== agent.identityState) {
+          await agentRepo.setIdentityState(tx, orgId, agentKey as AgentKey, next);
+        }
+        return { identityState: next };
+      });
+      if ('notFound' in result) return reply.code(404).send({ error: 'no such agent' });
+      return reply.send({ ok: true, agentKey, identityState: result.identityState });
+    });
+  };
+  identityAction('deactivate', 'activate_deactivate', 'INACTIVITY'); // ACTIVE → DORMANT
+  identityAction('reactivate', 'activate_deactivate', 'ACTIVITY'); //  DORMANT/DISCOVERED → ACTIVE
+  identityAction('retire', 'manage_agents', 'RETIRE'); //               → RETIRED (terminal)
+
+  // ── Phase C1: org-scoped key management (mint / rotate / revoke) — manage_keys ──
+  app.get('/admin/keys', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_keys');
+    if (auth === null) return;
+    const keys = await withTenant(auth.ctx.orgId, (tx) => apiKeyRepo.listActive(tx, auth.ctx.orgId));
+    return reply.send({ keys: keys.map((k) => ({ prefix: k.prefix, label: k.label, createdAt: k.createdAt })) });
+  });
+
+  app.post('/admin/keys', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_keys');
+    if (auth === null) return;
+    const { label } = (req.body ?? {}) as { label?: string };
+    const k = generateApiKey();
+    await withTenant(auth.ctx.orgId, (tx) =>
+      apiKeyRepo.mint(tx, auth.ctx.orgId, k.prefix, k.hash, typeof label === 'string' ? label : undefined),
+    );
+    return reply.send({ key: k.key, prefix: k.prefix }); // shown ONCE
+  });
+
+  /** Rotate a specific key: mint a new one, revoke the old. Zero-downtime (new valid first). */
+  app.post('/admin/keys/:prefix/rotate', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_keys');
+    if (auth === null) return;
+    const { prefix } = req.params as { prefix: string };
+    const orgId = auth.ctx.orgId;
+    const k = generateApiKey();
+    const result = await withTenant(orgId, async (tx) => {
+      await apiKeyRepo.mint(tx, orgId, k.prefix, k.hash, 'rotated');
+      const revoked = await apiKeyRepo.revoke(tx, orgId, prefix);
+      return { revoked };
+    });
+    if (result.revoked === 0) return reply.code(404).send({ error: 'no active key with that prefix' });
+    return reply.send({ key: k.key, prefix: k.prefix }); // shown ONCE; old key now dead
+  });
+
+  app.delete('/admin/keys/:prefix', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_keys');
+    if (auth === null) return;
+    const { prefix } = req.params as { prefix: string };
+    const revoked = await withTenant(auth.ctx.orgId, (tx) => apiKeyRepo.revoke(tx, auth.ctx.orgId, prefix));
+    if (revoked === 0) return reply.code(404).send({ error: 'no active key with that prefix' });
     return reply.send({ ok: true });
   });
 

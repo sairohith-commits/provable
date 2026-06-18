@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { cache } from 'react';
 import { ClerkAuthProvider } from './clerk/provider';
 import { assertActiveConfig } from './config';
 import { LocalAuthProvider } from './local/provider';
@@ -31,10 +32,9 @@ export function selectAuthProvider(): AuthProvider {
   return selected;
 }
 
-/** Resolve the edge auth state for the current request (the three-way page gate). */
-export function getAuthState(): Promise<AuthState> {
-  return selectAuthProvider().getAuthState();
-}
+/** Resolve the edge auth state for the current request. Memoized per request (React cache) so
+ *  the layout shell and the page don't each pay the /me + org-resolve round-trip. */
+export const getAuthState: () => Promise<AuthState> = cache(() => selectAuthProvider().getAuthState());
 
 /** The canonical context, or null when not authenticated (signed-out OR no-org). */
 export async function getAuthContext(): Promise<AuthContext | null> {

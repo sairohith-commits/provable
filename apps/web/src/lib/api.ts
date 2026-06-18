@@ -207,3 +207,106 @@ export async function removeMember(
   });
   return { ok: res.ok, status: res.status };
 }
+
+// ── Phase C1: admin agent management (manage_agents / activate_deactivate) ─────
+export type IdentityDisplayStatus = 'DISCOVERED' | 'ACTIVE' | 'IDLE' | 'DEACTIVATED' | 'RETIRED';
+export interface AdminAgentRow {
+  agentKey: string;
+  displayName: string | null;
+  identityState: string;
+  displayStatus: IdentityDisplayStatus;
+  lastSeen: string | null;
+}
+
+export async function listAdminAgents(orgId: string, subject: string): Promise<AdminAgentRow[]> {
+  const res = await fetch(`${apiUrl}/admin/agents`, { headers: readHeaders(orgId, subject), cache: 'no-store' });
+  if (!res.ok) throw new Error(`GET /admin/agents failed: ${res.status}`);
+  return ((await res.json()) as { agents: AdminAgentRow[] }).agents;
+}
+
+export async function provisionAgent(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  displayName?: string,
+): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch(`${apiUrl}/admin/agents`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify({ agentKey, ...(displayName ? { displayName } : {}) }),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status };
+}
+
+export async function renameAgent(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  displayName: string,
+): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch(`${apiUrl}/admin/agents/${encodeURIComponent(agentKey)}`, {
+    method: 'PATCH',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify({ displayName }),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status };
+}
+
+/** action ∈ deactivate | reactivate | retire. */
+export async function agentIdentityAction(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  action: 'deactivate' | 'reactivate' | 'retire',
+): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch(`${apiUrl}/admin/agents/${encodeURIComponent(agentKey)}/${action}`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status };
+}
+
+// ── Phase C1: org key management (manage_keys) ────────────────────────────────
+export interface AdminKeyRow {
+  prefix: string;
+  label: string | null;
+  createdAt: string;
+}
+
+export async function listKeys(orgId: string, subject: string): Promise<AdminKeyRow[]> {
+  const res = await fetch(`${apiUrl}/admin/keys`, { headers: readHeaders(orgId, subject), cache: 'no-store' });
+  if (!res.ok) throw new Error(`GET /admin/keys failed: ${res.status}`);
+  return ((await res.json()) as { keys: AdminKeyRow[] }).keys;
+}
+
+export async function mintKey(
+  orgId: string,
+  subject: string,
+  label?: string,
+): Promise<RotateResult> {
+  const res = await fetch(`${apiUrl}/admin/keys`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify(label ? { label } : {}),
+    cache: 'no-store',
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  const body = (await res.json()) as { key: string; prefix: string };
+  return { ok: true, status: res.status, key: body.key, prefix: body.prefix };
+}
+
+export async function revokeKey(
+  orgId: string,
+  subject: string,
+  prefix: string,
+): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch(`${apiUrl}/admin/keys/${encodeURIComponent(prefix)}`, {
+    method: 'DELETE',
+    headers: readHeaders(orgId, subject),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status };
+}

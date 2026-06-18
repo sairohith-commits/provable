@@ -1,6 +1,6 @@
 import type { OrgId, Role } from '@provable/contracts';
 import { membershipRepo } from './membership.js';
-import { orgRepo } from './repositories.js';
+import { apiKeyRepo, orgRepo } from './repositories.js';
 import { withTenant } from './tenant.js';
 
 /**
@@ -22,7 +22,7 @@ export function provisionOrg(
 ): Promise<void> {
   return withTenant(orgId, async (tx) => {
     await orgRepo.ensure(tx, orgId, name);
-    await orgRepo.setApiKey(tx, orgId, apiKeyPrefix, apiKeyHash);
+    await apiKeyRepo.mint(tx, orgId, apiKeyPrefix, apiKeyHash, 'provisioned');
     if (ownerEmail !== undefined) {
       await membershipRepo.invite(tx, orgId, ownerEmail, 'OWNER', ownerSubject ?? 'bootstrap');
       if (ownerSubject !== undefined) {

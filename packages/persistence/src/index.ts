@@ -14,6 +14,7 @@ export type { TenantClient } from './tenant.js';
 export { disconnect } from './client.js';
 export {
   agentRepo,
+  apiKeyRepo,
   decisionRepo,
   orgRepo,
   scoreRepo,
@@ -21,7 +22,7 @@ export {
   transitionRepo,
   verdictEventRepo,
 } from './repositories.js';
-export type { DecisionCreateInput, VerdictEventInput } from './repositories.js';
+export type { AgentRecord, ApiKeyRow, DecisionCreateInput, VerdictEventInput } from './repositories.js';
 export { mapDecision, mapTransition, mapVerdictEvent, mapScore } from './mappers.js';
 export type { ScoreRecord } from './mappers.js';
 export { makeRecomputePorts } from './recompute-ports.js';

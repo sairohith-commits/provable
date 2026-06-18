@@ -8,7 +8,7 @@ export const admin = new PrismaClient({
   datasources: { db: { url: process.env['DIRECT_URL'] ?? '' } },
 });
 
-const TABLES = ['membership', 'score', 'transition', 'verdict_event', 'decision', 'task', 'agent', 'org'];
+const TABLES = ['api_key', 'membership', 'score', 'transition', 'verdict_event', 'decision', 'task', 'agent', 'org'];
 
 export async function resetDb(): Promise<void> {
   await admin.$executeRawUnsafe(

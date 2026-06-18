@@ -115,6 +115,9 @@ export function recompute(
     if (body.type === 'decision') {
       scope = { orgId, agentKey: body.agentKey as AgentKey, taskKey: body.taskKey as TaskKey };
       await agentRepo.ensure(tx, orgId, scope.agentKey);
+      // First-contact activation: DISCOVERED → ACTIVE. An admin-DORMANT/RETIRED agent keeps
+      // recording decisions here but its state does NOT auto-revive (telemetry never dropped).
+      await agentRepo.markActiveOnFirstContact(tx, orgId, scope.agentKey);
       await taskRepo.ensure(tx, orgId, scope.agentKey, scope.taskKey);
       const cost = toCost(body.cost);
       const created = await decisionRepo.createIfAbsent(tx, {

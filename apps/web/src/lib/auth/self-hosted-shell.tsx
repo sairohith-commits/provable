@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { ReactNode } from 'react';
+import { adminNavLinks } from './admin-nav';
 import type { AuthProvider } from './types';
 
 /**
@@ -12,6 +13,7 @@ export function makeSelfHostedShell(getAuthState: AuthProvider['getAuthState']) 
   return async function AppShell({ children }: { children: ReactNode }): Promise<ReactNode> {
     const state = await getAuthState();
     const signedIn = state.status === 'authenticated';
+    const adminLinks = state.status === 'authenticated' ? adminNavLinks(state.context.role) : [];
     return (
       <html lang="en">
         <body>
@@ -28,6 +30,11 @@ export function makeSelfHostedShell(getAuthState: AuthProvider['getAuthState']) 
                   <a className="nav-link" href="/connect">
                     Connect
                   </a>
+                  {adminLinks.map((l) => (
+                    <a key={l.href} className="nav-link" href={l.href}>
+                      {l.label}
+                    </a>
+                  ))}
                   <form action="/api/auth/logout" method="post" className="logout-form">
                     <button type="submit" className="nav-link">
                       Sign out
