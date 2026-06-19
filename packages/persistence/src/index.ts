@@ -35,6 +35,8 @@ export {
 } from './rls-assert.js';
 export type { RlsConnectionStatus } from './rls-assert.js';
 export { provisionOrg, linkClerkOrg, assignRole, bootstrapAppRole } from './provision.js';
+export { inspectOrg, resetOrgData } from './reset.js';
+export type { OrgDataCounts, OrgResetReport } from './reset.js';
 export { membershipRepo, normalizeEmail } from './membership.js';
 export type { MemberRow } from './membership.js';
 export { readModelRepo } from './read-models.js';
