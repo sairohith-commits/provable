@@ -16,6 +16,7 @@ import type {
 import type { TaskGovernanceView } from '@provable/contracts';
 import { PERSONAS, type Persona, type SectionKey } from '@/lib/view-helpers';
 import { type AgentGroup, groupByAgent } from '@/lib/fleet-view';
+import { relativeTime, shortSubject } from '@/lib/format';
 import { FleetRow } from './fleet-row';
 import { FreeSetPanel } from './free-set-panel';
 import { PillarShell } from './pillar-shell';
@@ -256,10 +257,20 @@ export function GovernanceSection({ transitions }: { transitions: TransitionView
               <span className="t-dir">{t.direction}</span>
               <span className="t-status">{t.status}</span>
               <span className={`t-trigger trig-${t.trigger.toLowerCase()}`}>{t.trigger}</span>
+              {/* approver (approved a promotion) vs actor (authored an override) — never collapsed;
+                  auto-demotions show neither. */}
               {t.approver ? (
-                <span className="t-approver">✓ {t.approverDisplay ?? t.approver}</span>
+                <span className="t-approver" data-approver>
+                  ✓ approved by {t.approverDisplay ?? shortSubject(t.approver)}
+                </span>
+              ) : t.actor ? (
+                <span className="t-actor" data-actor>
+                  ✎ override by {t.actorDisplay ?? shortSubject(t.actor)}
+                </span>
               ) : null}
-              <span className="t-at">{t.at}</span>
+              <span className="t-at" title={t.at}>
+                {relativeTime(t.at)}
+              </span>
             </li>
           ))}
         </ul>
@@ -307,10 +318,28 @@ function pct(n: number | null): string {
   return n === null ? '—' : `${(n * 100).toFixed(0)}%`;
 }
 
+const MIX_LEGEND: { cls: string; label: string }[] = [
+  { cls: 'mix-accepted', label: 'Accepted' },
+  { cls: 'mix-overridden', label: 'Overridden' },
+  { cls: 'mix-escalated', label: 'Escalated' },
+  { cls: 'mix-failed', label: 'Failed' },
+  { cls: 'mix-pending', label: 'Pending' },
+];
+
 export function VisibilitySection({ rows }: { rows: VisibilityRow[] }) {
   return (
     <section className="pillar" data-section="visibility">
       <h2>{SECTION_TITLE.visibility}</h2>
+      {rows.length > 0 ? (
+        <ul className="mix-legend" data-mix-legend aria-label="verdict mix legend">
+          {MIX_LEGEND.map((m) => (
+            <li key={m.cls} className="mix-legend-item">
+              <span className={`mix-swatch ${m.cls}`} aria-hidden />
+              {m.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {rows.length === 0 ? (
         <p className="empty">No agent activity yet.</p>
       ) : (
@@ -351,30 +380,31 @@ export function CostSection({ cost }: { cost: CostView }) {
     <section className="pillar" data-section="cost">
       <h2>{SECTION_TITLE.cost}</h2>
 
-      <div className="cost-summary glass">
-        <div className="cost-metric">
-          <span className="cost-num">{org.decisionCount}</span>
-          <span className="cost-lbl">decisions</span>
+      {/* Honest empty-state: no cost signal → ONE line, not four broken "—" cards. */}
+      {org.hasCostSignal ? (
+        <div className="cost-summary glass">
+          <div className="cost-metric">
+            <span className="cost-num">{org.decisionCount}</span>
+            <span className="cost-lbl">decisions</span>
+          </div>
+          <div className="cost-metric">
+            <span className="cost-num">{usd(org.usd)}</span>
+            <span className="cost-lbl">real agent cost</span>
+          </div>
+          <div className="cost-metric">
+            <span className="cost-num">{org.tokens.toLocaleString()}</span>
+            <span className="cost-lbl">tokens</span>
+          </div>
+          <div className="cost-metric">
+            <span className="cost-num">{org.avgLatencyMs === null ? '—' : `${Math.round(org.avgLatencyMs)}ms`}</span>
+            <span className="cost-lbl">avg latency</span>
+          </div>
         </div>
-        <div className="cost-metric">
-          <span className="cost-num">{org.hasCostSignal ? usd(org.usd) : '—'}</span>
-          <span className="cost-lbl">real agent cost</span>
-        </div>
-        <div className="cost-metric">
-          <span className="cost-num">{org.hasCostSignal ? org.tokens.toLocaleString() : '—'}</span>
-          <span className="cost-lbl">tokens</span>
-        </div>
-        <div className="cost-metric">
-          <span className="cost-num">{org.avgLatencyMs === null ? '—' : `${Math.round(org.avgLatencyMs)}ms`}</span>
-          <span className="cost-lbl">avg latency</span>
-        </div>
-      </div>
-      {!org.hasCostSignal ? (
-        <p className="disclosure">
-          No per-decision cost reported by this org's adapters yet — cost is shown as empty, not
-          estimated.
+      ) : (
+        <p className="cost-empty disclosure" data-cost-empty>
+          No cost signal reported yet — projection only.
         </p>
-      ) : null}
+      )}
 
       {/* Shadow-counterfactual ROI — a PROJECTION, assumptions rendered on screen. */}
       <div className="roi glass" data-projection="true">
@@ -434,7 +464,9 @@ export function GuardrailsSection({ safety }: { safety: SafetyView }) {
                 </span>
                 <span className="t-status">{e.status}</span>
                 <span className="t-reason">{e.reason}</span>
-                <span className="t-at">{e.at}</span>
+                <span className="t-at" title={e.at}>
+                  {relativeTime(e.at)}
+                </span>
               </li>
             ))}
           </ul>

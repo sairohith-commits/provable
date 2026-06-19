@@ -76,7 +76,12 @@ export default async function PeoplePage() {
           {members.map((m) => (
             <li key={m.email} className="member-row glass" data-member={m.email}>
               <span className="member-email">{m.email}</span>
-              <span className="member-status">{m.subject === null ? 'invited' : 'active'}</span>
+              <span
+                className="member-status"
+                data-status={m.subject === null ? 'invited' : 'active'}
+              >
+                {m.subject === null ? 'invited' : 'active'}
+              </span>
               <form action={setRoleAction} className="member-role-form">
                 <input type="hidden" name="email" value={m.email} />
                 <select name="role" defaultValue={m.role}>

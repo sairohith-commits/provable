@@ -27,7 +27,8 @@ export interface AgentRow {
 
 /** A governance transition with the Clerk approver id resolved to a human display name. */
 export interface TransitionView extends Transition {
-  approverDisplay?: string;
+  approverDisplay?: string; // resolved name/email for an APPROVER (approved a promotion)
+  actorDisplay?: string; // resolved name/email for an ACTOR (authored a MANUAL_OVERRIDE)
 }
 
 // ── Identity & Registry ──────────────────────────────────────────────────────

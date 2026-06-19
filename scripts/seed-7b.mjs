@@ -10,8 +10,22 @@ if (!BASE || !KEY || !TOKEN || !ORG) {
   console.error('usage: node scripts/seed-7b.mjs <BASE> <KEY> <TOKEN> <ORG>');
   process.exit(2);
 }
-const BASE_MS = Date.parse('2026-06-15T00:00:00.000Z');
-const at = (i) => new Date(BASE_MS + i * 60_000).toISOString();
+// Now-relative anchoring (Phase U4): the demo timeline must never run into the future, or the
+// dashboard renders "in 31 days" for a transition that supposedly already happened. We place the
+// LATEST synthetic event (the signal-loss at index FAR+1) one hour before now and build backwards,
+// then ASSERT every emitted `at(i)` is ≤ now — a hard guard against the old hard-coded 2026-06-15
+// base that pushed the +35-day signal-loss track into the future.
+const NOW_MS = Date.now();
+const SAFETY_MARGIN_MS = 60 * 60 * 1000; // newest event sits 1h in the past (tolerates clock skew)
+const LATEST_IDX = 35 * 24 * 60 + 1; // must match the highest index used below (FAR + 1)
+const BASE_MS = NOW_MS - SAFETY_MARGIN_MS - LATEST_IDX * 60_000;
+const at = (i) => {
+  const ms = BASE_MS + i * 60_000;
+  if (ms > NOW_MS) {
+    throw new Error(`seed timestamp at(${i}) = ${new Date(ms).toISOString()} is in the future (now ${new Date(NOW_MS).toISOString()})`);
+  }
+  return new Date(ms).toISOString();
+};
 
 async function track(body) {
   const r = await fetch(`${BASE}/track`, {

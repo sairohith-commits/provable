@@ -11,6 +11,7 @@ import {
   getTransitions,
   getVisibility,
 } from './api';
+import { displaySubject } from './format';
 import type { OverviewData, Transition, TransitionView } from './types';
 
 /**
@@ -39,10 +40,15 @@ async function resolveApproverNames(ids: readonly string[]): Promise<Map<string,
   return map;
 }
 
-function withApprover(t: Transition, names: Map<string, string>): TransitionView {
-  if (t.approver === undefined) return t;
-  const display = t.approver.startsWith('user_') ? (names.get(t.approver) ?? t.approver) : t.approver;
-  return { ...t, approverDisplay: display };
+// Resolve BOTH the approver (approved a promotion) AND the actor (authored a MANUAL_OVERRIDE),
+// preserving the distinction — auto-demotions carry neither. A raw user_XXX is never surfaced:
+// resolved name/email if known, else a non-raw short tail (displaySubject).
+function withDisplays(t: Transition, names: Map<string, string>): TransitionView {
+  return {
+    ...t,
+    ...(t.approver !== undefined ? { approverDisplay: displaySubject(t.approver, names) } : {}),
+    ...(t.actor !== undefined ? { actorDisplay: displaySubject(t.actor, names) } : {}),
+  };
 }
 
 /** Load every pillar for an org in one shot, resolving approver ids to human names.
@@ -59,20 +65,21 @@ export async function loadOverview(orgId: string, subject: string): Promise<Over
     getFleet(orgId, subject),
   ]);
 
-  const approverIds = [...transitions, ...guardrails.events]
-    .map((t) => t.approver)
+  // Resolve both approver AND actor ids (preserve the distinction).
+  const subjectIds = [...transitions, ...guardrails.events]
+    .flatMap((t) => [t.approver, t.actor])
     .filter((a): a is string => typeof a === 'string');
-  const names = await resolveApproverNames(approverIds);
+  const names = await resolveApproverNames(subjectIds);
 
   return {
     agents,
-    transitions: transitions.map((t) => withApprover(t, names)),
+    transitions: transitions.map((t) => withDisplays(t, names)),
     registry,
     visibility,
     cost,
     guardrails: {
       ...guardrails,
-      events: guardrails.events.map((e) => withApprover(e, names)),
+      events: guardrails.events.map((e) => withDisplays(e, names)),
     },
     summary,
     fleet,

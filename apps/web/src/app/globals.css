@@ -777,3 +777,70 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
   padding: 0;
   margin-left: 8px;
 }
+
+/* ── Phase U4: humanization & honest-empty ───────────────────────────────────── */
+/* A MANUAL_OVERRIDE actor reads distinctly from an approver (shadow vs solo color). */
+.t-actor {
+  color: var(--band-shadow);
+}
+
+/* Verdict-mix legend — color → meaning, so the stacked bar is self-describing. */
+.mix-legend {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.mix-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.mix-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+/* Cost honest-empty: a single line, never a row of "—" cards. */
+.cost-empty {
+  font-style: italic;
+}
+
+/* People: status as a distinct badge so "email" and "invited/active" never read as one string. */
+.member-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+}
+.member-email {
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  color: var(--ink);
+}
+.member-status {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+.member-status[data-status='active'] {
+  background: color-mix(in srgb, var(--band-solo) 16%, white);
+  color: var(--band-solo);
+  border: 1px solid color-mix(in srgb, var(--band-solo) 40%, white);
+}
+.member-status[data-status='invited'] {
+  background: color-mix(in srgb, var(--muted) 14%, white);
+  color: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--muted) 34%, white);
+}
