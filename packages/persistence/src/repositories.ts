@@ -213,6 +213,102 @@ export const apiKeyRepo = {
   },
 };
 
+// ── Tier-2 connector config (Phase O3a) ──────────────────────────────────────────
+/** PUBLIC read shape — deliberately OMITS the encrypted credential so it can never be serialized
+ *  into a response. `hasCredential` exposes only whether one is set. */
+export interface ConnectorConfigRow {
+  id: string;
+  name: string;
+  enabled: boolean;
+  mapping: unknown; // DeclarativeMapping JSON (validated by @provable/adapters on load)
+  sourceUrl: string | null;
+  sourceAuthHeaderName: string | null;
+  hasCredential: boolean;
+  createdAt: string;
+}
+
+export interface ConnectorCreateInput {
+  name: string;
+  mapping: unknown;
+  sourceUrl?: string;
+  sourceAuthHeaderName?: string;
+  sourceAuthHeaderValueEnc?: string; // already-encrypted ciphertext (the API encrypts; repo stores)
+}
+
+/** The pull source + its (still-encrypted) credential — internal use only (the pull handler
+ *  decrypts at fetch time). Never returned by a public route. */
+export interface ConnectorSourceSecret {
+  enabled: boolean;
+  mapping: unknown;
+  sourceUrl: string | null;
+  sourceAuthHeaderName: string | null;
+  sourceAuthHeaderValueEnc: string | null;
+}
+
+function toConnectorRow(k: {
+  id: string;
+  name: string;
+  enabled: boolean;
+  mapping: Prisma.JsonValue;
+  sourceUrl: string | null;
+  sourceAuthHeaderName: string | null;
+  sourceAuthHeaderValueEnc: string | null;
+  createdAt: Date;
+}): ConnectorConfigRow {
+  return {
+    id: k.id,
+    name: k.name,
+    enabled: k.enabled,
+    mapping: k.mapping,
+    sourceUrl: k.sourceUrl,
+    sourceAuthHeaderName: k.sourceAuthHeaderName,
+    hasCredential: k.sourceAuthHeaderValueEnc !== null && k.sourceAuthHeaderValueEnc.length > 0,
+    createdAt: k.createdAt.toISOString(),
+  };
+}
+
+export const connectorConfigRepo = {
+  /** Create a connector config (the credential ciphertext is supplied pre-encrypted by the API). */
+  async create(tx: TenantClient, orgId: OrgId, input: ConnectorCreateInput): Promise<ConnectorConfigRow> {
+    const row = await tx.connectorConfig.create({
+      data: {
+        orgId,
+        name: input.name,
+        mapping: input.mapping as Prisma.InputJsonValue,
+        ...(input.sourceUrl !== undefined ? { sourceUrl: input.sourceUrl } : {}),
+        ...(input.sourceAuthHeaderName !== undefined ? { sourceAuthHeaderName: input.sourceAuthHeaderName } : {}),
+        ...(input.sourceAuthHeaderValueEnc !== undefined ? { sourceAuthHeaderValueEnc: input.sourceAuthHeaderValueEnc } : {}),
+      },
+    });
+    return toConnectorRow(row);
+  },
+
+  /** Public read (no credential). RLS already scopes to the org; orgId is belt-and-suspenders. */
+  async getById(tx: TenantClient, orgId: OrgId, id: string): Promise<ConnectorConfigRow | null> {
+    const row = await tx.connectorConfig.findFirst({ where: { id, orgId } });
+    return row === null ? null : toConnectorRow(row);
+  },
+
+  /** All connectors for the org, newest first (no credentials). */
+  async list(tx: TenantClient, orgId: OrgId): Promise<ConnectorConfigRow[]> {
+    const rows = await tx.connectorConfig.findMany({ where: { orgId }, orderBy: { createdAt: 'desc' } });
+    return rows.map(toConnectorRow);
+  },
+
+  /** INTERNAL: the pull source + encrypted credential (decrypted by the pull handler). */
+  async getSourceSecret(tx: TenantClient, orgId: OrgId, id: string): Promise<ConnectorSourceSecret | null> {
+    const row = await tx.connectorConfig.findFirst({ where: { id, orgId } });
+    if (row === null) return null;
+    return {
+      enabled: row.enabled,
+      mapping: row.mapping,
+      sourceUrl: row.sourceUrl,
+      sourceAuthHeaderName: row.sourceAuthHeaderName,
+      sourceAuthHeaderValueEnc: row.sourceAuthHeaderValueEnc,
+    };
+  },
+};
+
 export const taskRepo = {
   async ensure(
     tx: TenantClient,

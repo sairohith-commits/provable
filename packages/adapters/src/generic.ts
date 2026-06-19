@@ -1,4 +1,4 @@
-import type { Outcome, Verdict, VerdictKind } from '@provable/contracts';
+import { OUTCOMES, type Outcome, type Verdict, VERDICT_KINDS, type VerdictKind } from '@provable/contracts';
 import { z } from 'zod';
 import type { Connector, MappedDecision, MappedEvent } from './port.js';
 
@@ -118,3 +118,38 @@ export function genericConnector(id: string, mapping: DeclarativeMapping = DEFAU
 
 /** The reference connector shipped in C3. */
 export const eventsConnector: Connector = genericConnector('events', DEFAULT_EVENT_MAPPING);
+
+/**
+ * PURE mapping engine (Phase O3a) — apply a stored declarative mapping to ONE raw source record
+ * and produce a canonical MappedEvent (NO orgId; the composition root stamps the tenant). A record
+ * missing the verdict OR outcome path maps to an observe-only decision (no fabricated readiness).
+ * Throws on an invalid record (e.g. missing the required externalRef).
+ */
+export function applyMapping(mapping: DeclarativeMapping, record: unknown): MappedEvent {
+  return mapItem(record, mapping, 0);
+}
+
+// Zod schema for a STORED mapping (the connector_config.mapping JSON column). Values are validated
+// against the canonical enums so a malformed stored mapping is rejected at load, never silently
+// mis-translated. The verdict/outcome blocks are optional → those records ingest observe-only.
+const valueMapSchema = <T extends string>(members: readonly T[]) =>
+  z.object({
+    path: z.string().min(1),
+    values: z.record(z.string(), z.enum(members as unknown as [T, ...T[]])),
+  });
+
+const mappingSchema = z.object({
+  agentKey: z.string().min(1),
+  taskKey: z.string().min(1),
+  externalRef: z.string().min(1),
+  at: z.string().min(1).optional(),
+  action: z.string().min(1).optional(),
+  confidence: z.string().min(1).optional(),
+  verdict: valueMapSchema(VERDICT_KINDS).optional(),
+  outcome: valueMapSchema(OUTCOMES).optional(),
+});
+
+/** Validate + parse a stored mapping (JSON column / API input) into a typed DeclarativeMapping. */
+export function parseMapping(raw: unknown): DeclarativeMapping {
+  return mappingSchema.parse(raw) as DeclarativeMapping;
+}

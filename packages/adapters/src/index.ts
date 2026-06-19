@@ -7,8 +7,10 @@
 export type { Connector, MappedDecision, MappedEvent, MappedVerdictEvent } from './port.js';
 export {
   DEFAULT_EVENT_MAPPING,
+  applyMapping,
   eventsConnector,
   genericConnector,
+  parseMapping,
   type DeclarativeMapping,
   type ValueMapping,
 } from './generic.js';

@@ -17,6 +17,7 @@ import {
 import { generateApiKey } from './auth.js';
 import { registerAnthropicGateway } from './anthropic-gateway.js';
 import { registerConnector } from './connector.js';
+import { registerConnectorEngine } from './connector-engine.js';
 import { buildFleetOverview } from './fleet.js';
 import { registerGateway } from './gateway.js';
 import {
@@ -290,6 +291,11 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   //    agent's existing events → canonical Decisions, ingested via recompute. Mapping lives in
   //    @provable/adapters (anti-corruption boundary); the tenant is the machine-key org.
   registerConnector(app);
+
+  // ── Phase O3a: Tier-2 connector ENGINE — stored per-org mappings + push/pull ingestion.
+  //    Machine-key org auth; mapping/anti-corruption in @provable/adapters; pull is SSRF-guarded
+  //    and manual-trigger only (no scheduler). Distinct from the C3 /connector/:id reference path.
+  registerConnectorEngine(app);
 
   // KPI summary: composed REAL counts + the ROI projection (assumptions attached). Honest
   // zeros on a fresh org; the api key PREFIX (lookup handle, not the secret) for the Connect view.

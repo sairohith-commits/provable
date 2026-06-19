@@ -120,6 +120,7 @@ model Org {
   scores        Score[]
   memberships   Membership[]
   apiKeys       ApiKey[]
+  connectors    ConnectorConfig[]
 
   @@map("org")
 }
@@ -144,6 +145,27 @@ model ApiKey {
 
   @@index([orgId])
   @@map("api_key")
+}
+
+// Tier-2 connector config (Phase O3a) — a per-org, stored declarative mapping + optional pull
+// source. `mapping` is the DeclarativeMapping JSON (@provable/adapters validates it on load). The
+// pull credential is stored ENCRYPTED in `sourceAuthHeaderValueEnc` (AES-256-GCM at the API) and
+// is NEVER returned in any response. Tenant-scoped by orgId (RLS).
+model ConnectorConfig {
+  id                       String   @id @default(uuid())
+  orgId                    String
+  name                     String
+  enabled                  Boolean  @default(true)
+  mapping                  Json // DeclarativeMapping (field-paths + verdict/outcome value-maps)
+  sourceUrl                String? // pull source endpoint (public http/https only — SSRF-guarded)
+  sourceAuthHeaderName     String? // e.g. "authorization"
+  sourceAuthHeaderValueEnc String? // AES-256-GCM ciphertext of the header value; never returned
+  createdAt                DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("connector_config")
 }
 
 // RBAC membership (Phase B) — who may do what in an org. Tenant-scoped by orgId (RLS).
