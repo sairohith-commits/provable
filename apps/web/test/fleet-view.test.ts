@@ -91,12 +91,14 @@ describe('ladderGeometry — dot iff scored; ring suppressed + lock iff suspende
 });
 
 describe('work-queue filter (U5) — counters select over the readiness list', () => {
+  // Includes an OBSERVING (gateway/observe-only) row so the U5 filter ∩ O2 status is covered.
   const fleet = [
     task({ agentKey: 'prioritize', taskKey: 'triage', status: 'PROMOTABLE' }),
     task({ agentKey: 'vision', taskKey: 'classify', status: 'DEGRADED' }),
     task({ agentKey: 'billing', taskKey: 'auto_refund', status: 'SUSPENDED' }),
     task({ agentKey: 'support', taskKey: 'reply', status: 'HELD' }),
     task({ agentKey: 'support', taskKey: 'route', status: 'AT_LEVEL' }),
+    task({ agentKey: 'gw-agent', taskKey: 'chat', status: 'OBSERVING' }),
   ];
 
   it('Promotable → only PROMOTABLE rows', () => {
@@ -104,7 +106,7 @@ describe('work-queue filter (U5) — counters select over the readiness list', (
     expect(out.map((t) => t.status)).toEqual(['PROMOTABLE']);
   });
 
-  it('Needs attention → only DEGRADED + SUSPENDED (never HELD/AT_LEVEL/PROMOTABLE)', () => {
+  it('Needs attention → only DEGRADED + SUSPENDED (never HELD/AT_LEVEL/PROMOTABLE/OBSERVING)', () => {
     const out = filterTasks(fleet, 'attention');
     expect(out.map((t) => t.status).sort()).toEqual(['DEGRADED', 'SUSPENDED']);
   });
@@ -125,6 +127,26 @@ describe('work-queue filter (U5) — counters select over the readiness list', (
     expect(queueEmptyCopy('promotable')).toBe('Nothing ready to advance right now.');
     expect(queueEmptyCopy('attention')).toBe('No agents need attention.');
     expect(queueEmptyCopy(null)).toBeNull();
+  });
+
+  // INTEGRATION (U5 ∩ O2) — the previously-unverified cross-branch behavior, now proven:
+  // an OBSERVING agent must be excluded from BOTH the work-queue attention filter AND the
+  // needsAttention KPI rule (DEGRADED + SUSPENDED only). It surfaces in the DEFAULT view.
+  it('OBSERVING is excluded from BOTH the attention queue and the needsAttention KPI', () => {
+    const observing = task({ agentKey: 'gw-agent', taskKey: 'chat', status: 'OBSERVING' });
+
+    // (1) Work-queue attention filter excludes OBSERVING…
+    const attentionView = filterTasks(fleet, 'attention');
+    expect(attentionView.some((t) => t.status === 'OBSERVING')).toBe(false);
+    expect(attentionView).not.toContainEqual(observing);
+
+    // …but the DEFAULT (unfiltered) view DOES include it.
+    expect(filterTasks(fleet, null).some((t) => t.status === 'OBSERVING')).toBe(true);
+
+    // (2) needsAttention KPI rule (the same DEGRADED+SUSPENDED set the API counts) excludes it.
+    const needsAttention = fleet.filter((t) => t.status === 'DEGRADED' || t.status === 'SUSPENDED');
+    expect(needsAttention.some((t) => t.status === 'OBSERVING')).toBe(false);
+    expect(needsAttention).toHaveLength(2); // the DEGRADED + the SUSPENDED, never the OBSERVING
   });
 });
 
