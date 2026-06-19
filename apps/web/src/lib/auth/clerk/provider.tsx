@@ -10,7 +10,6 @@ import {
 import { auth } from '@clerk/nextjs/server';
 import type { ReactNode } from 'react';
 import { fetchRole, resolveOrg } from '../../api';
-import { adminNavLinks } from '../admin-nav';
 import { buildAuthContext } from '../context';
 import type { AuthProvider, AuthState } from '../types';
 
@@ -38,12 +37,10 @@ export const ClerkAuthProvider: AuthProvider = {
   type: 'clerk',
   getAuthState,
 
-  // Clerk's client-reactive chrome is preserved (Show/OrganizationSwitcher/UserButton). Phase C1
-  // adds role-gated admin links: the role is resolved server-side (so absent for roles without
-  // the permission) and rendered inside the signed-in area.
+  // Clerk's client-reactive chrome is preserved (Show/OrganizationSwitcher/UserButton). U5: the
+  // top-nav links moved to the sidebar (sole navigation) — only the brand, org switcher, and user
+  // menu remain in the header. The auth-gating logic (getAuthState/<Show>) is unchanged.
   async AppShell({ children }: { children: ReactNode }): Promise<ReactNode> {
-    const state = await getAuthState();
-    const adminLinks = state.status === 'authenticated' ? adminNavLinks(state.context.role) : [];
     return (
       <ClerkProvider>
         <html lang="en">
@@ -54,17 +51,6 @@ export const ClerkAuthProvider: AuthProvider = {
               </div>
               <div className="chrome-right">
                 <Show when="signed-in">
-                  <a className="nav-link" href="/">
-                    Overview
-                  </a>
-                  <a className="nav-link" href="/connect">
-                    Connect
-                  </a>
-                  {adminLinks.map((l) => (
-                    <a key={l.href} className="nav-link" href={l.href}>
-                      {l.label}
-                    </a>
-                  ))}
                   <OrganizationSwitcher hidePersonal />
                   <UserButton />
                 </Show>

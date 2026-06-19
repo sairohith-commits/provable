@@ -161,3 +161,42 @@ export function groupByAgent(tasks: readonly TaskGovernanceView[]): AgentGroup[]
   groups.sort((a, b) => SEVERITY[b.worst] - SEVERITY[a.worst] || a.agentKey.localeCompare(b.agentKey));
   return groups;
 }
+
+// ── Work-queue filter (Phase U5) ──────────────────────────────────────────────────
+// The "Promotable" and "Needs attention" KPI counters double as work queues over the
+// readiness list. PURE: each queue maps to the CLOSED set of statuses it surfaces, so the
+// filter can never drift from the counter it represents. `null` ⇒ no filter (show everything).
+export type QueueFilter = 'promotable' | 'attention' | null;
+export type QueueKind = Exclude<QueueFilter, null>;
+
+const QUEUE_STATUSES: Record<QueueKind, ReadonlySet<GovernanceStatus>> = {
+  promotable: new Set<GovernanceStatus>(['PROMOTABLE']),
+  attention: new Set<GovernanceStatus>(['DEGRADED', 'SUSPENDED']),
+};
+
+/** Tasks visible under the selected queue. `null` ⇒ all tasks (a fresh copy, never mutated). */
+export function filterTasks(
+  tasks: readonly TaskGovernanceView[],
+  filter: QueueFilter,
+): TaskGovernanceView[] {
+  if (filter === null) return [...tasks];
+  const allowed = QUEUE_STATUSES[filter];
+  return tasks.filter((t) => allowed.has(t.status));
+}
+
+/** Toggle semantics: clicking the active counter clears it; otherwise select the clicked one. */
+export function toggleFilter(current: QueueFilter, clicked: QueueKind): QueueFilter {
+  return current === clicked ? null : clicked;
+}
+
+/** Honest empty-state copy for a filtered queue. `null` (unfiltered) has no queue-specific copy. */
+export function queueEmptyCopy(filter: QueueFilter): string | null {
+  switch (filter) {
+    case 'promotable':
+      return 'Nothing ready to advance right now.';
+    case 'attention':
+      return 'No agents need attention.';
+    default:
+      return null;
+  }
+}
