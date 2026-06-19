@@ -2,7 +2,7 @@
 
 import { type Role, can } from '@provable/contracts';
 import { useCallback, useEffect, useState } from 'react';
-import { maskedKey, quickstart } from '@/lib/connect';
+import { anthropicGatewayRecipe, maskedKey, quickstart } from '@/lib/connect';
 import type { OverviewData } from '@/lib/types';
 
 const POLL_MS = 4000;
@@ -26,6 +26,12 @@ export function ConnectClient({
   const [copied, setCopied] = useState(false);
   const [connectedAgent, setConnectedAgent] = useState<string | null>(null);
   const [agentCount, setAgentCount] = useState(initialAgentCount);
+  // Tier-1 Anthropic gateway key (Phase O2): bound to an agent×task, shown once.
+  const [gwAgent, setGwAgent] = useState('my-agent');
+  const [gwTask, setGwTask] = useState('chat');
+  const [gwKey, setGwKey] = useState<string | null>(null);
+  const [gwMinting, setGwMinting] = useState(false);
+  const [gwError, setGwError] = useState<string | null>(null);
 
   // Live onboarding beat: poll the registry; flip waiting → connected when an agent appears.
   const poll = useCallback(async () => {
@@ -65,6 +71,26 @@ export function ConnectClient({
       setRotating(false);
     }
   }, []);
+
+  const mintGateway = useCallback(async () => {
+    setGwMinting(true);
+    setGwError(null);
+    try {
+      const res = await fetch('/api/gateway-key', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agentKey: gwAgent, taskKey: gwTask }),
+      });
+      if (!res.ok) {
+        setGwError('Could not mint a gateway key — are you an Owner?');
+        return;
+      }
+      const body = (await res.json()) as { key: string };
+      setGwKey(body.key);
+    } finally {
+      setGwMinting(false);
+    }
+  }, [gwAgent, gwTask]);
 
   const copy = useCallback(async () => {
     if (newKey === null) return;
@@ -125,6 +151,50 @@ export function ConnectClient({
           Python SDK over HTTP — the same machine contract the dashboard reads.{' '}
           <span className="soon">zero-code gateway onboarding — coming soon</span>
         </p>
+      </section>
+
+      <section className="pillar" data-tier1-anthropic>
+        <h3>Tier 1 — Anthropic gateway (zero code)</h3>
+        <p className="connect-lead">
+          Repoint your agent&apos;s Anthropic <code>base_url</code> to Provable and keep using your{' '}
+          <strong>own</strong> Anthropic key — Provable forwards it upstream and{' '}
+          <strong>never stores it</strong>. You get real USD cost + activity. Readiness stays{' '}
+          <strong>N/A</strong> (Observe-only): a gateway agent is never promotable until verdicts
+          flow via the SDK.
+        </p>
+        {canManageKeys ? (
+          <div className="key-row glass">
+            <input
+              className="gw-input"
+              aria-label="agent key"
+              value={gwAgent}
+              onChange={(e) => setGwAgent(e.target.value)}
+              data-gw-agent
+            />
+            <input
+              className="gw-input"
+              aria-label="task key"
+              value={gwTask}
+              onChange={(e) => setGwTask(e.target.value)}
+              data-gw-task
+            />
+            <button className="approve" onClick={mintGateway} disabled={gwMinting} data-gw-mint>
+              {gwMinting ? 'Generating…' : 'Generate gateway key'}
+            </button>
+          </div>
+        ) : (
+          <p className="disclosure">Only an Owner can mint a gateway key.</p>
+        )}
+        {gwError ? <p className="connect-error">{gwError}</p> : null}
+        <pre className="quickstart" data-anthropic-recipe>
+          <code>{anthropicGatewayRecipe(apiUrl, gwKey ?? '<YOUR_GATEWAY_KEY>')}</code>
+        </pre>
+        {gwKey !== null ? (
+          <p className="disclosure" data-gw-key-once>
+            Your gateway key is shown <strong>once</strong>, embedded in the snippet above. Copy it
+            now — it is hashed at rest and cannot be shown again.
+          </p>
+        ) : null}
       </section>
 
       <section className="pillar">

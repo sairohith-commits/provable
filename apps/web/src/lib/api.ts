@@ -327,6 +327,29 @@ export async function mintKey(
   return { ok: true, status: res.status, key: body.key, prefix: body.prefix };
 }
 
+export interface GatewayKeyResult extends RotateResult {
+  agentKey?: string;
+  taskKey?: string;
+}
+
+/** Mint a per-agent Tier-1 gateway key (Phase O2). manage_keys enforced API-side. */
+export async function mintGatewayKey(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  taskKey: string,
+): Promise<GatewayKeyResult> {
+  const res = await fetch(`${apiUrl}/admin/keys/gateway`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify({ agentKey, taskKey }),
+    cache: 'no-store',
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  const body = (await res.json()) as { key: string; prefix: string; agentKey: string; taskKey: string };
+  return { ok: true, status: res.status, key: body.key, prefix: body.prefix, agentKey: body.agentKey, taskKey: body.taskKey };
+}
+
 export async function revokeKey(
   orgId: string,
   subject: string,

@@ -38,10 +38,28 @@ describe('deriveGovernanceStatus — exactly one status + actionAvailable', () =
     expect(r.actionAvailable).toBe(false);
   });
 
-  it('unscored → DEGRADED, action=false', () => {
-    const r = deriveGovernanceStatus({ ...base, scored: false, impliedBand: null });
+  it('unscored GOVERNED task → DEGRADED, action=false', () => {
+    const r = deriveGovernanceStatus({ ...base, effectiveMode: 'SHADOW', scored: false, impliedBand: null });
     expect(r.status).toBe('DEGRADED');
     expect(r.actionAvailable).toBe(false);
+  });
+
+  it('observe-only (effectiveMode OBSERVING, never scored) → OBSERVING, action=false, no headroom (Phase O2)', () => {
+    const r = deriveGovernanceStatus({ ...base, effectiveMode: 'OBSERVING', scored: false, impliedBand: null });
+    expect(r.status).toBe('OBSERVING');
+    expect(r.actionAvailable).toBe(false); // never promotable; no approve affordance
+    expect(r.headroomTo).toBeNull();
+  });
+
+  it('regression: a signal-loss demotion INTO observing is DEGRADED, not OBSERVING', () => {
+    const r = deriveGovernanceStatus({
+      ...base,
+      effectiveMode: 'OBSERVING', // demoted down to observing…
+      scored: true,
+      impliedBand: 'SHADOW',
+      latestIsAutoDemotionSignalLossOrDrift: true, // …by a signal-loss/drift auto-demotion
+    });
+    expect(r.status).toBe('DEGRADED'); // the governed-task-lost-signal case, never OBSERVING
   });
 
   it('manual-hold: score implies SOLO, overridden to SHADOW → HELD, action=false, headroom set', () => {

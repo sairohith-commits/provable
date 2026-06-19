@@ -12,3 +12,17 @@ export {
   type DeclarativeMapping,
   type ValueMapping,
 } from './generic.js';
+export {
+  ANTHROPIC_BASE_URL,
+  ANTHROPIC_MESSAGES_PATH,
+  ANTHROPIC_PRICES,
+  ANTHROPIC_PRICES_AS_OF,
+  EMPTY_GATEWAY_USAGE,
+  mapAnthropicGatewayDecision,
+  parseMessagesUsage,
+  priceUsd,
+  reduceSseUsage,
+  type GatewayCall,
+  type GatewayUsage,
+  type ModelPrice,
+} from './anthropic-gateway.js';

@@ -9,10 +9,13 @@ import type { AutonomyMode } from './lifecycle.js';
  *   PROMOTABLE — scored above its level with a LIVE promotion to act on (actionAvailable=true).
  *   HELD       — manually overridden BELOW the earned band (a standing divergence; review it).
  *   AT_LEVEL   — operating at its sanctioned level; nothing to act on.
- *   DEGRADED   — unscored, or just auto-demoted by signal-loss/drift.
+ *   OBSERVING  — observe-only (effectiveMode OBSERVING): cost/activity flow but no verdicts, so
+ *                readiness is N/A and it is not promotable. Informational, NOT "needs attention".
+ *   DEGRADED   — a GOVERNED-mode task that lost signal / auto-demoted (signal-loss/drift). It no
+ *                longer catches never-scored observe-only agents (those are OBSERVING).
  *   SUSPENDED  — effectiveMode is SUSPENDED (beats any score).
  */
-export const GOVERNANCE_STATUSES = ['PROMOTABLE', 'HELD', 'AT_LEVEL', 'DEGRADED', 'SUSPENDED'] as const;
+export const GOVERNANCE_STATUSES = ['PROMOTABLE', 'HELD', 'AT_LEVEL', 'OBSERVING', 'DEGRADED', 'SUSPENDED'] as const;
 export type GovernanceStatus = (typeof GOVERNANCE_STATUSES)[number];
 
 /** One row of the fleet read-model — exactly one status per task. `Mode` = AutonomyMode. */

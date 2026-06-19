@@ -424,6 +424,15 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 .key-row { display: flex; align-items: center; gap: 14px; padding: 14px 18px; justify-content: space-between; }
 .key-prefix { font-family: var(--font-mono); font-size: 0.9rem; color: var(--ink); }
 .connect-error { color: var(--danger); font-size: 0.82rem; margin: 8px 4px 0; }
+.gw-input {
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+}
 .quickstart {
   background: #0f1623;
   color: #d7e0ee;
@@ -533,6 +542,12 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 .status-chip[data-tone='muted'] {
   color: var(--muted);
   background: color-mix(in srgb, var(--muted) 8%, white);
+}
+/* Observe-only — soft-blue informational (distinct from the actionable 'info' promote tone). */
+.status-chip[data-tone='observe'] {
+  color: color-mix(in srgb, var(--band-copilot) 70%, var(--muted));
+  background: color-mix(in srgb, var(--band-copilot) 7%, white);
+  border-color: color-mix(in srgb, var(--band-copilot) 22%, white);
 }
 
 /* Fleet group + rows */

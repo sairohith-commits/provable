@@ -29,9 +29,14 @@ describe('StatusChip spec is exhaustive over GovernanceStatus (no free string)',
     expect(chipLabel(task({ status: 'PROMOTABLE', headroomTo: 'SOLO' }))).toBe('promotable to Solo');
     expect(chipLabel(task({ status: 'HELD', effectiveMode: 'SHADOW' }))).toBe('held at Shadow · manual');
     expect(chipLabel(task({ status: 'AT_LEVEL' }))).toBe('at level');
+    expect(chipLabel(task({ status: 'OBSERVING' }))).toBe('observe-only');
     expect(chipLabel(task({ status: 'DEGRADED', score: null }))).toBe('unscored');
     expect(chipLabel(task({ status: 'DEGRADED', score: 55 }))).toBe('signal lost · demoted');
     expect(chipLabel(task({ status: 'SUSPENDED' }))).toBe('suspended · guardrail');
+  });
+
+  it('OBSERVING is a neutral/informational chip (observe tone, eye icon) — Phase O2', () => {
+    expect(CHIP_SPEC.OBSERVING).toEqual({ tone: 'observe', icon: 'eye' });
   });
 });
 
@@ -45,11 +50,12 @@ describe('rowAction — an approve affordance is structurally impossible unless 
     expect(rowAction(task({ status: 'PROMOTABLE', actionAvailable: true }), false)).toBeNull();
   });
 
-  it('NEVER an approve when actionAvailable=false — DEGRADED, SUSPENDED, HELD, AT_LEVEL', () => {
-    for (const status of ['DEGRADED', 'SUSPENDED', 'HELD', 'AT_LEVEL'] as GovernanceStatus[]) {
+  it('NEVER an approve when actionAvailable=false — DEGRADED, SUSPENDED, HELD, AT_LEVEL, OBSERVING', () => {
+    for (const status of ['DEGRADED', 'SUSPENDED', 'HELD', 'AT_LEVEL', 'OBSERVING'] as GovernanceStatus[]) {
       const a = rowAction(task({ status, actionAvailable: false }), true);
       expect(a?.kind).not.toBe('approve');
     }
+    expect(rowAction(task({ status: 'OBSERVING', actionAvailable: false }), true)).toBeNull(); // observe-only: no affordance
     expect(rowAction(task({ status: 'HELD', actionAvailable: false }), true)).toEqual({ kind: 'review', label: 'Review' });
     expect(rowAction(task({ status: 'DEGRADED', actionAvailable: false }), true)?.kind).toBe('link');
     expect(rowAction(task({ status: 'SUSPENDED', actionAvailable: false }), true)?.kind).toBe('link');
