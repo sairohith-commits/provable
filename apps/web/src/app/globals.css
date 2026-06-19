@@ -878,3 +878,55 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
   color: var(--muted);
   border: 1px solid color-mix(in srgb, var(--muted) 34%, white);
 }
+
+/* ── Phase W1 — Onboarding wizard ("Add an agent") ──────────────────────────── */
+.onboarding-lede { color: var(--muted); max-width: 64ch; margin: 6px 4px 22px; }
+.onboarding-lede strong { color: var(--ink); }
+
+.wiz-steps {
+  display: flex; gap: 10px; list-style: none; padding: 0; margin: 0 0 18px;
+  flex-wrap: wrap;
+}
+.wiz-step {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.82rem; color: var(--muted);
+  padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--hairline); background: var(--surface);
+}
+.wiz-step-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 999px;
+  font-family: var(--font-mono); font-size: 0.72rem;
+  background: color-mix(in srgb, var(--muted) 14%, white); color: var(--muted);
+}
+.wiz-step.active { color: var(--ink); border-color: var(--band-copilot); }
+.wiz-step.active .wiz-step-n { background: var(--band-copilot); color: white; }
+.wiz-step.done { color: var(--band-solo); border-color: color-mix(in srgb, var(--band-solo) 40%, white); }
+.wiz-step.done .wiz-step-n { background: var(--band-solo); color: white; }
+
+.wiz-body { margin-bottom: 16px; }
+.wiz-pane h2 { font-size: 1.05rem; margin: 0 0 14px; }
+.wiz-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; max-width: 46ch; }
+.wiz-field span { font-size: 0.82rem; color: var(--ink); }
+.wiz-field em { color: var(--muted); font-style: normal; font-size: 0.78rem; }
+
+.tier-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.tier-card {
+  text-align: left; cursor: pointer; padding: 18px;
+  display: flex; flex-direction: column; gap: 8px;
+  transition: border-color 0.15s ease;
+}
+.tier-card h3 { font-family: var(--font-display); font-size: 0.98rem; margin: 0; }
+.tier-tagline { color: var(--band-copilot); font-size: 0.82rem; margin: 0; font-weight: 500; }
+.tier-detail { color: var(--muted); font-size: 0.82rem; margin: 0; line-height: 1.45; }
+.tier-card:hover { border-color: color-mix(in srgb, var(--band-copilot) 40%, white); }
+.tier-card.selected { border-color: var(--band-copilot); box-shadow: inset 0 0 0 1px var(--band-copilot); }
+
+.fidelity-badge {
+  margin-top: auto; font-size: 0.74rem; color: var(--muted);
+  padding: 5px 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--band-shadow) 9%, white);
+  border: 1px solid color-mix(in srgb, var(--band-shadow) 28%, white);
+}
+
+.wiz-nav { display: flex; justify-content: space-between; gap: 12px; }
