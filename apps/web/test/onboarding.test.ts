@@ -1,6 +1,6 @@
-import { GATEWAY_BASE_PATH, GATEWAY_HEADERS } from '@provable/contracts';
+import { ANTHROPIC_GW_PREFIX, GATEWAY_BASE_PATH, GATEWAY_HEADERS } from '@provable/contracts';
 import { describe, expect, it } from 'vitest';
-import { connectorRecipe, gatewayRecipe, quickstart } from '../src/lib/connect';
+import { anthropicGatewayRecipe, connectorRecipe, gatewayRecipe, quickstart } from '../src/lib/connect';
 import { TIERS, tier } from '../src/lib/onboarding-tiers';
 
 describe('three-tier onboarding presentation', () => {
@@ -54,6 +54,26 @@ describe('gateway recipe ↔ proxy header lockstep', () => {
   it('is honest about Observe-only / N/A (no promise of a score)', () => {
     expect(recipe.toLowerCase()).toContain('observe-only');
     expect(recipe).toContain('N/A');
+  });
+});
+
+describe('Anthropic gateway recipe ↔ proxy path lockstep (Phase O2)', () => {
+  const recipe = anthropicGatewayRecipe('https://api.example.test', 'pvb_gw_secret');
+
+  it('points base_url at the per-agent gateway path (key IN the URL, not a header)', () => {
+    expect(recipe).toContain(`https://api.example.test${ANTHROPIC_GW_PREFIX}/pvb_gw_secret/v1/messages`);
+    expect(recipe).toContain('https://api.example.test/gw/pvb_gw_secret');
+  });
+
+  it('keeps the caller using their OWN Anthropic key (x-api-key, never stored)', () => {
+    expect(recipe).toContain('x-api-key: $ANTHROPIC_API_KEY');
+    expect(recipe.toLowerCase()).toContain('never stores it');
+  });
+
+  it('is honest about Observe-only / N/A and not-promotable', () => {
+    expect(recipe.toLowerCase()).toContain('observe-only');
+    expect(recipe).toContain('N/A');
+    expect(recipe.toLowerCase()).toContain('never promotable');
   });
 });
 

@@ -5,24 +5,28 @@ import { activeKey, navFor } from '../src/lib/nav';
 const keysOf = (role: Role) => navFor(role).flatMap((s) => s.items.map((i) => i.key));
 
 describe('navFor — Govern is view-level; Manage is role-gated', () => {
-  it('OWNER sees every item', () => {
+  it('OWNER sees every item (incl. Connectors — manage_agents)', () => {
     const keys = keysOf('OWNER');
     expect(keys).toEqual(
-      expect.arrayContaining(['overview', 'activity', 'safety', 'cost', 'registry', 'connect', 'onboarding', 'agents', 'people']),
+      expect.arrayContaining([
+        'overview', 'activity', 'safety', 'cost', 'registry', 'connect', 'connectors', 'onboarding', 'agents', 'people',
+      ]),
     );
   });
 
-  it('VIEWER sees all Govern + only Connect under Manage (no onboarding/agents/people)', () => {
+  it('VIEWER sees all Govern + only Connect under Manage (no connectors/onboarding/agents/people)', () => {
     const keys = keysOf('VIEWER');
     expect(keys).toEqual(expect.arrayContaining(['overview', 'activity', 'safety', 'cost', 'registry', 'connect']));
+    expect(keys).not.toContain('connectors');
     expect(keys).not.toContain('onboarding');
     expect(keys).not.toContain('agents');
     expect(keys).not.toContain('people');
   });
 
-  it('OPERATOR sees Agents (activate_deactivate) but not People (manage_people)', () => {
+  it('OPERATOR sees Agents (activate_deactivate) but not Connectors (manage_agents) or People', () => {
     const keys = keysOf('OPERATOR');
     expect(keys).toContain('agents');
+    expect(keys).not.toContain('connectors'); // manage_agents is OWNER-only
     expect(keys).not.toContain('people');
   });
 
@@ -40,6 +44,7 @@ describe('activeKey — longest-prefix match; "/" only matches exactly', () => {
     expect(activeKey('/admin/agents')).toBe('agents');
     expect(activeKey('/admin/agents/sub')).toBe('agents');
     expect(activeKey('/people')).toBe('people');
+    expect(activeKey('/connectors')).toBe('connectors');
   });
   it('an unknown path falls back to overview (never crashes)', () => {
     expect(activeKey('/nope')).toBe('overview');

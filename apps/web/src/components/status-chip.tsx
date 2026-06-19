@@ -13,6 +13,8 @@ function Icon({ icon }: { icon: ChipIcon }) {
       return (<svg {...common}><path d="M18 11V6a2 2 0 0 0-4 0M14 6V4a2 2 0 0 0-4 0v2M10 6V5a2 2 0 0 0-4 0v9" /><path d="M18 11a6 6 0 0 1-6 6H9a6 6 0 0 1-3-2" /></svg>);
     case 'check':
       return (<svg {...common}><path d="M20 6 9 17l-5-5" /></svg>);
+    case 'eye':
+      return (<svg {...common}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>);
     case 'alert-triangle':
       return (<svg {...common}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>);
     case 'ban':

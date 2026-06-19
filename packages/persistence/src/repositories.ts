@@ -128,12 +128,15 @@ export const agentRepo = {
 export interface ApiKeyRow {
   prefix: string;
   label: string | null;
+  kind: 'SDK' | 'GATEWAY';
+  agentKey: string | null;
+  taskKey: string | null;
   createdAt: string;
   revokedAt: string | null;
 }
 
 export const apiKeyRepo = {
-  /** Mint an org-scoped key row (the plaintext is shown once by the caller; never stored). */
+  /** Mint an org-scoped SDK key row (the plaintext is shown once by the caller; never stored). */
   async mint(
     tx: TenantClient,
     orgId: OrgId,
@@ -142,7 +145,25 @@ export const apiKeyRepo = {
     label?: string,
   ): Promise<void> {
     await tx.apiKey.create({
-      data: { orgId, prefix, hash, ...(label !== undefined ? { label } : {}) },
+      data: { orgId, prefix, hash, kind: 'SDK', ...(label !== undefined ? { label } : {}) },
+    });
+  },
+
+  /**
+   * Mint a per-agent GATEWAY key (Phase O2) bound to agentKey + a default taskKey. Distinct kind
+   * from the SDK machine key — resolved only by the gateway proxy, never honored on /track etc.
+   */
+  async mintGateway(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: string,
+    taskKey: string,
+    prefix: string,
+    hash: string,
+    label?: string,
+  ): Promise<void> {
+    await tx.apiKey.create({
+      data: { orgId, prefix, hash, kind: 'GATEWAY', agentKey, taskKey, ...(label !== undefined ? { label } : {}) },
     });
   },
 
@@ -155,6 +176,9 @@ export const apiKeyRepo = {
     return rows.map((k) => ({
       prefix: k.prefix,
       label: k.label,
+      kind: k.kind,
+      agentKey: k.agentKey,
+      taskKey: k.taskKey,
       createdAt: k.createdAt.toISOString(),
       revokedAt: k.revokedAt === null ? null : k.revokedAt.toISOString(),
     }));
@@ -186,6 +210,102 @@ export const apiKeyRepo = {
       orderBy: { createdAt: 'desc' },
     });
     return row?.prefix ?? null;
+  },
+};
+
+// ── Tier-2 connector config (Phase O3a) ──────────────────────────────────────────
+/** PUBLIC read shape — deliberately OMITS the encrypted credential so it can never be serialized
+ *  into a response. `hasCredential` exposes only whether one is set. */
+export interface ConnectorConfigRow {
+  id: string;
+  name: string;
+  enabled: boolean;
+  mapping: unknown; // DeclarativeMapping JSON (validated by @provable/adapters on load)
+  sourceUrl: string | null;
+  sourceAuthHeaderName: string | null;
+  hasCredential: boolean;
+  createdAt: string;
+}
+
+export interface ConnectorCreateInput {
+  name: string;
+  mapping: unknown;
+  sourceUrl?: string;
+  sourceAuthHeaderName?: string;
+  sourceAuthHeaderValueEnc?: string; // already-encrypted ciphertext (the API encrypts; repo stores)
+}
+
+/** The pull source + its (still-encrypted) credential — internal use only (the pull handler
+ *  decrypts at fetch time). Never returned by a public route. */
+export interface ConnectorSourceSecret {
+  enabled: boolean;
+  mapping: unknown;
+  sourceUrl: string | null;
+  sourceAuthHeaderName: string | null;
+  sourceAuthHeaderValueEnc: string | null;
+}
+
+function toConnectorRow(k: {
+  id: string;
+  name: string;
+  enabled: boolean;
+  mapping: Prisma.JsonValue;
+  sourceUrl: string | null;
+  sourceAuthHeaderName: string | null;
+  sourceAuthHeaderValueEnc: string | null;
+  createdAt: Date;
+}): ConnectorConfigRow {
+  return {
+    id: k.id,
+    name: k.name,
+    enabled: k.enabled,
+    mapping: k.mapping,
+    sourceUrl: k.sourceUrl,
+    sourceAuthHeaderName: k.sourceAuthHeaderName,
+    hasCredential: k.sourceAuthHeaderValueEnc !== null && k.sourceAuthHeaderValueEnc.length > 0,
+    createdAt: k.createdAt.toISOString(),
+  };
+}
+
+export const connectorConfigRepo = {
+  /** Create a connector config (the credential ciphertext is supplied pre-encrypted by the API). */
+  async create(tx: TenantClient, orgId: OrgId, input: ConnectorCreateInput): Promise<ConnectorConfigRow> {
+    const row = await tx.connectorConfig.create({
+      data: {
+        orgId,
+        name: input.name,
+        mapping: input.mapping as Prisma.InputJsonValue,
+        ...(input.sourceUrl !== undefined ? { sourceUrl: input.sourceUrl } : {}),
+        ...(input.sourceAuthHeaderName !== undefined ? { sourceAuthHeaderName: input.sourceAuthHeaderName } : {}),
+        ...(input.sourceAuthHeaderValueEnc !== undefined ? { sourceAuthHeaderValueEnc: input.sourceAuthHeaderValueEnc } : {}),
+      },
+    });
+    return toConnectorRow(row);
+  },
+
+  /** Public read (no credential). RLS already scopes to the org; orgId is belt-and-suspenders. */
+  async getById(tx: TenantClient, orgId: OrgId, id: string): Promise<ConnectorConfigRow | null> {
+    const row = await tx.connectorConfig.findFirst({ where: { id, orgId } });
+    return row === null ? null : toConnectorRow(row);
+  },
+
+  /** All connectors for the org, newest first (no credentials). */
+  async list(tx: TenantClient, orgId: OrgId): Promise<ConnectorConfigRow[]> {
+    const rows = await tx.connectorConfig.findMany({ where: { orgId }, orderBy: { createdAt: 'desc' } });
+    return rows.map(toConnectorRow);
+  },
+
+  /** INTERNAL: the pull source + encrypted credential (decrypted by the pull handler). */
+  async getSourceSecret(tx: TenantClient, orgId: OrgId, id: string): Promise<ConnectorSourceSecret | null> {
+    const row = await tx.connectorConfig.findFirst({ where: { id, orgId } });
+    if (row === null) return null;
+    return {
+      enabled: row.enabled,
+      mapping: row.mapping,
+      sourceUrl: row.sourceUrl,
+      sourceAuthHeaderName: row.sourceAuthHeaderName,
+      sourceAuthHeaderValueEnc: row.sourceAuthHeaderValueEnc,
+    };
   },
 };
 

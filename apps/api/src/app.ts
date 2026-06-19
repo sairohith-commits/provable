@@ -15,7 +15,9 @@ import {
   withTenant,
 } from '@provable/persistence';
 import { generateApiKey } from './auth.js';
+import { registerAnthropicGateway } from './anthropic-gateway.js';
 import { registerConnector } from './connector.js';
+import { registerConnectorEngine } from './connector-engine.js';
 import { buildFleetOverview } from './fleet.js';
 import { registerGateway } from './gateway.js';
 import {
@@ -280,10 +282,20 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   //    human onboarding actions. Registered here as the interim home (refactors to adapters/gateway).
   registerGateway(app);
 
+  // ── Phase O2: transparent Anthropic /v1/messages proxy (Tier 1, Observe-only). Per-agent
+  //    gateway key in the URL path → org+agent+task; the caller's Anthropic key is forwarded
+  //    upstream and never stored. Vendor specifics + price table live in @provable/adapters.
+  registerAnthropicGateway(app);
+
   // ── Phase C3: connector data path (Tier 2). Machine-key auth; the reference connector maps the
   //    agent's existing events → canonical Decisions, ingested via recompute. Mapping lives in
   //    @provable/adapters (anti-corruption boundary); the tenant is the machine-key org.
   registerConnector(app);
+
+  // ── Phase O3a: Tier-2 connector ENGINE — stored per-org mappings + push/pull ingestion.
+  //    Machine-key org auth; mapping/anti-corruption in @provable/adapters; pull is SSRF-guarded
+  //    and manual-trigger only (no scheduler). Distinct from the C3 /connector/:id reference path.
+  registerConnectorEngine(app);
 
   // KPI summary: composed REAL counts + the ROI projection (assumptions attached). Honest
   // zeros on a fresh org; the api key PREFIX (lookup handle, not the secret) for the Connect view.
@@ -643,7 +655,16 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     const auth = await requireInternalPermission(req, reply, 'manage_keys');
     if (auth === null) return;
     const keys = await withTenant(auth.ctx.orgId, (tx) => apiKeyRepo.listActive(tx, auth.ctx.orgId));
-    return reply.send({ keys: keys.map((k) => ({ prefix: k.prefix, label: k.label, createdAt: k.createdAt })) });
+    return reply.send({
+      keys: keys.map((k) => ({
+        prefix: k.prefix,
+        label: k.label,
+        kind: k.kind,
+        agentKey: k.agentKey,
+        taskKey: k.taskKey,
+        createdAt: k.createdAt,
+      })),
+    });
   });
 
   app.post('/admin/keys', async (req, reply) => {
@@ -655,6 +676,33 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
       apiKeyRepo.mint(tx, auth.ctx.orgId, k.prefix, k.hash, typeof label === 'string' ? label : undefined),
     );
     return reply.send({ key: k.key, prefix: k.prefix }); // shown ONCE
+  });
+
+  /** Mint a per-agent Tier-1 GATEWAY key (Phase O2). Distinct kind; bound to agentKey + taskKey. */
+  app.post('/admin/keys/gateway', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'manage_keys');
+    if (auth === null) return;
+    const { agentKey, taskKey, label } = (req.body ?? {}) as {
+      agentKey?: string;
+      taskKey?: string;
+      label?: string;
+    };
+    if (typeof agentKey !== 'string' || agentKey.length === 0 || typeof taskKey !== 'string' || taskKey.length === 0) {
+      return reply.code(400).send({ error: 'agentKey and taskKey are required' });
+    }
+    const k = generateApiKey();
+    await withTenant(auth.ctx.orgId, (tx) =>
+      apiKeyRepo.mintGateway(
+        tx,
+        auth.ctx.orgId,
+        agentKey,
+        taskKey,
+        k.prefix,
+        k.hash,
+        typeof label === 'string' ? label : 'gateway',
+      ),
+    );
+    return reply.send({ key: k.key, prefix: k.prefix, agentKey, taskKey }); // shown ONCE
   });
 
   /** Rotate a specific key: mint a new one, revoke the old. Zero-downtime (new valid first). */

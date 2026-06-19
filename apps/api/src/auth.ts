@@ -1,6 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { OrgId } from '@provable/contracts';
-import { resolveOrgByApiKey } from '@provable/persistence';
+import {
+  type GatewayKeyResolution,
+  resolveGatewayByApiKey,
+  resolveOrgByApiKey,
+} from '@provable/persistence';
 
 /**
  * Machine-key auth. Keys look like `pvb_<prefix>_<secret>`. We store only the
@@ -39,6 +43,20 @@ export async function authenticate(rawKey: string | undefined): Promise<OrgId | 
   const prefix = parsePrefix(rawKey);
   if (prefix === null) return null;
   return resolveOrgByApiKey(prefix, hashApiKey(rawKey));
+}
+
+/**
+ * Resolve a per-agent GATEWAY key (Phase O2) → org + agentKey + taskKey, or null if
+ * missing/malformed/unknown/revoked/non-gateway. Same hash discipline as authenticate(): only the
+ * prefix + sha256(full key) ever touch the DB; the secret is never stored.
+ */
+export async function authenticateGateway(
+  rawKey: string | undefined,
+): Promise<GatewayKeyResolution | null> {
+  if (rawKey === undefined || rawKey.length === 0) return null;
+  const prefix = parsePrefix(rawKey);
+  if (prefix === null) return null;
+  return resolveGatewayByApiKey(prefix, hashApiKey(rawKey));
 }
 
 /** Pull the key from `Authorization: Bearer <key>` or `x-api-key`. */

@@ -327,6 +327,29 @@ export async function mintKey(
   return { ok: true, status: res.status, key: body.key, prefix: body.prefix };
 }
 
+export interface GatewayKeyResult extends RotateResult {
+  agentKey?: string;
+  taskKey?: string;
+}
+
+/** Mint a per-agent Tier-1 gateway key (Phase O2). manage_keys enforced API-side. */
+export async function mintGatewayKey(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  taskKey: string,
+): Promise<GatewayKeyResult> {
+  const res = await fetch(`${apiUrl}/admin/keys/gateway`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify({ agentKey, taskKey }),
+    cache: 'no-store',
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  const body = (await res.json()) as { key: string; prefix: string; agentKey: string; taskKey: string };
+  return { ok: true, status: res.status, key: body.key, prefix: body.prefix, agentKey: body.agentKey, taskKey: body.taskKey };
+}
+
 export async function revokeKey(
   orgId: string,
   subject: string,
@@ -338,4 +361,68 @@ export async function revokeKey(
     cache: 'no-store',
   });
   return { ok: res.ok, status: res.status };
+}
+
+// ── Tier-2 connectors (Phase O3b) — internal-authed dashboard path. The web never holds the
+//    org's machine key; the API accepts the internal token (role-gated) for these too. ─────────
+export interface ConnectorRow {
+  id: string;
+  name: string;
+  enabled: boolean;
+  mapping: unknown;
+  sourceUrl: string | null;
+  sourceAuthHeaderName: string | null;
+  hasCredential: boolean; // the credential VALUE is never returned — only this flag
+  createdAt: string;
+}
+
+export async function listConnectors(orgId: string, subject: string): Promise<ConnectorRow[]> {
+  const res = await fetch(`${apiUrl}/connectors`, { headers: readHeaders(orgId, subject), cache: 'no-store' });
+  if (!res.ok) throw new Error(`GET /connectors failed: ${res.status}`);
+  return ((await res.json()) as { connectors: ConnectorRow[] }).connectors;
+}
+
+export async function createConnector(
+  orgId: string,
+  subject: string,
+  body: { name: string; mapping: unknown; source?: { url?: string; authHeaderName?: string; authHeaderValue?: string } },
+): Promise<{ ok: boolean; status: number; connector?: ConnectorRow }> {
+  const res = await fetch(`${apiUrl}/connectors`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  return { ok: true, status: res.status, connector: ((await res.json()) as { connector: ConnectorRow }).connector };
+}
+
+export async function dryRunConnector(
+  orgId: string,
+  subject: string,
+  mapping: unknown,
+  sample: unknown,
+): Promise<{ ok: boolean; event?: unknown; governed?: boolean; error?: string }> {
+  const res = await fetch(`${apiUrl}/connectors/dry-run`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify({ mapping, sample }),
+    cache: 'no-store',
+  });
+  if (!res.ok) return { ok: false, error: `dry-run failed: ${res.status}` };
+  return (await res.json()) as { ok: boolean; event?: unknown; governed?: boolean; error?: string };
+}
+
+export async function pullConnector(
+  orgId: string,
+  subject: string,
+  id: string,
+): Promise<{ status: number; body: unknown }> {
+  const res = await fetch(`${apiUrl}/connectors/${encodeURIComponent(id)}/pull`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: '{}',
+    cache: 'no-store',
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
 }

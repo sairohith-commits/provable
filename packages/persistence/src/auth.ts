@@ -16,6 +16,34 @@ export async function resolveOrgByApiKey(prefix: string, hash: string): Promise<
   return id === null ? null : (id as OrgId);
 }
 
+export interface GatewayKeyResolution {
+  readonly orgId: OrgId;
+  readonly agentKey: string;
+  readonly taskKey: string;
+}
+
+/**
+ * Resolve a per-agent GATEWAY key's (prefix, hash) → org + agentKey + taskKey (Phase O2). Like
+ * resolveOrgByApiKey it runs before any tenant context (the proxy identifies the agent from the
+ * URL key), so it uses a SECURITY DEFINER function scoped to ACTIVE GATEWAY keys only. Returns
+ * null for an unknown / revoked / non-gateway key.
+ */
+export async function resolveGatewayByApiKey(
+  prefix: string,
+  hash: string,
+): Promise<GatewayKeyResolution | null> {
+  const rows = await prisma.$queryRaw<
+    { org_id: string | null; agent_key: string | null; task_key: string | null }[]
+  >`select org_id, agent_key, task_key from auth_resolve_gateway(${prefix}, ${hash})`;
+  const r = rows[0];
+  if (r === undefined || r.org_id === null) return null;
+  return {
+    orgId: r.org_id as OrgId,
+    agentKey: r.agent_key ?? '',
+    taskKey: r.task_key ?? '',
+  };
+}
+
 /**
  * Resolve a Provable org from a linked Clerk Organization id. Like resolveOrgByApiKey,
  * this runs before any tenant context exists (the web maps the verified Clerk session →
