@@ -1,6 +1,15 @@
 import { GOVERNANCE_STATUSES, type GovernanceStatus, type TaskGovernanceView } from '@provable/contracts';
 import { describe, expect, it } from 'vitest';
-import { CHIP_SPEC, chipLabel, groupByAgent, ladderGeometry, rowAction } from '../src/lib/fleet-view';
+import {
+  CHIP_SPEC,
+  chipLabel,
+  filterTasks,
+  groupByAgent,
+  ladderGeometry,
+  queueEmptyCopy,
+  rowAction,
+  toggleFilter,
+} from '../src/lib/fleet-view';
 
 const task = (over: Partial<TaskGovernanceView>): TaskGovernanceView => ({
   agentKey: 'a',
@@ -72,6 +81,44 @@ describe('ladderGeometry — dot iff scored; ring suppressed + lock iff suspende
     const g = ladderGeometry(60, 'CO_PILOT', 'AT_LEVEL');
     expect(g.lock).toBe(false);
     expect(g.ring).toBe(65);
+  });
+});
+
+describe('work-queue filter (U5) — counters select over the readiness list', () => {
+  const fleet = [
+    task({ agentKey: 'prioritize', taskKey: 'triage', status: 'PROMOTABLE' }),
+    task({ agentKey: 'vision', taskKey: 'classify', status: 'DEGRADED' }),
+    task({ agentKey: 'billing', taskKey: 'auto_refund', status: 'SUSPENDED' }),
+    task({ agentKey: 'support', taskKey: 'reply', status: 'HELD' }),
+    task({ agentKey: 'support', taskKey: 'route', status: 'AT_LEVEL' }),
+  ];
+
+  it('Promotable → only PROMOTABLE rows', () => {
+    const out = filterTasks(fleet, 'promotable');
+    expect(out.map((t) => t.status)).toEqual(['PROMOTABLE']);
+  });
+
+  it('Needs attention → only DEGRADED + SUSPENDED (never HELD/AT_LEVEL/PROMOTABLE)', () => {
+    const out = filterTasks(fleet, 'attention');
+    expect(out.map((t) => t.status).sort()).toEqual(['DEGRADED', 'SUSPENDED']);
+  });
+
+  it('no filter → every row, and the source array is never mutated', () => {
+    const out = filterTasks(fleet, null);
+    expect(out).toHaveLength(fleet.length);
+    expect(out).not.toBe(fleet); // fresh copy
+  });
+
+  it('toggle: re-selecting the active queue clears it; selecting another switches', () => {
+    expect(toggleFilter(null, 'promotable')).toBe('promotable');
+    expect(toggleFilter('promotable', 'promotable')).toBeNull(); // active → clear
+    expect(toggleFilter('promotable', 'attention')).toBe('attention'); // switch
+  });
+
+  it('empty-state copy is honest per queue', () => {
+    expect(queueEmptyCopy('promotable')).toBe('Nothing ready to advance right now.');
+    expect(queueEmptyCopy('attention')).toBe('No agents need attention.');
+    expect(queueEmptyCopy(null)).toBeNull();
   });
 });
 

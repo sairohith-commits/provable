@@ -68,11 +68,6 @@ main {
   color: var(--muted);
 }
 
-.persona-lens {
-  display: flex;
-  gap: 8px;
-  margin: 8px 4px 16px;
-}
 .lens {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -266,18 +261,7 @@ main {
   color: var(--muted);
 }
 
-/* ── Phase 7b: needs-attention, persona pill ─────────────────────────────────── */
-.attention-pill {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--band-shadow) 18%, white);
-  color: var(--band-shadow);
-  border: 1px solid color-mix(in srgb, var(--band-shadow) 40%, white);
-  font-weight: 600;
-}
+/* ── Phase 7b: needs-attention row emphasis ──────────────────────────────────── */
 .agent-row.attention {
   border-left: 3px solid var(--band-shadow);
   background: color-mix(in srgb, var(--band-shadow) 6%, rgba(255, 255, 255, 0.72));
@@ -405,6 +389,23 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 .kpi-attention { border-left: 3px solid var(--band-shadow); }
 .kpi-projection { border-left: 3px solid var(--band-solo); }
 .kpi-projection .kpi-value { color: var(--band-solo); }
+
+/* U5: the Promotable / Needs-attention counters double as work-queue filters. The clickable
+   card is a real <button>; reset its chrome to match the static cards, add affordance + selected. */
+.kpi-filter {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.kpi-filter:hover { border-color: var(--band-copilot); }
+.kpi-filter:focus-visible { outline: 2px solid var(--band-copilot); outline-offset: 2px; }
+.kpi-selected {
+  border-color: var(--band-copilot);
+  box-shadow: inset 0 0 0 1px var(--band-copilot);
+}
+.kpi-selected .kpi-label { color: var(--ink); }
 
 /* ── Phase 7c: Connect view ──────────────────────────────────────────────────── */
 .connect-lead { color: var(--muted); max-width: 60ch; margin: 0 4px 14px; }

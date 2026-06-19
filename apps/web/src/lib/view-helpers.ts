@@ -1,45 +1,13 @@
 import type { AgentRow, ImpliedBand, TransitionView } from './types';
 
 /**
- * PURE view helpers — persona pillar ordering, needs-attention ranking, and the
- * two-marker ladder math. No data is invented here: a persona lens only REORDERS the
- * same real sections; ranking only READS persisted state. Unit-tested in view-helpers.test.
+ * PURE view helpers — the section-key vocabulary, needs-attention ranking, and the
+ * two-marker ladder math. No data is invented here: ranking only READS persisted state.
+ * Unit-tested in view-helpers.test. (The persona lens was removed in U5; the KPI counters
+ * are now the list filter — see fleet-view.ts filterTasks.)
  */
 
-export const PERSONAS = ['All', 'CTO', 'COO', 'CFO', 'Legal'] as const;
-export type Persona = (typeof PERSONAS)[number];
-
 export type SectionKey = 'readiness' | 'governance' | 'visibility' | 'cost' | 'guardrails' | 'registry';
-
-const ALL_SECTIONS: readonly SectionKey[] = [
-  'readiness',
-  'governance',
-  'visibility',
-  'cost',
-  'guardrails',
-  'registry',
-];
-
-/** Each lens RE-EMPHASIZES the same sections in the order that role cares about. */
-const PERSONA_ORDER: Record<Persona, readonly SectionKey[]> = {
-  All: ALL_SECTIONS,
-  CTO: ['visibility', 'readiness', 'registry', 'guardrails', 'governance', 'cost'],
-  COO: ['readiness', 'governance', 'guardrails', 'visibility', 'cost', 'registry'],
-  CFO: ['cost', 'readiness', 'visibility', 'registry', 'guardrails', 'governance'],
-  Legal: ['governance', 'guardrails', 'registry', 'readiness', 'visibility', 'cost'],
-};
-
-export function sectionOrder(persona: Persona): readonly SectionKey[] {
-  return PERSONA_ORDER[persona];
-}
-
-/** Same set of sections for every persona — only the order differs (negative-test guard). */
-export function sectionsAreSamePerPersona(): boolean {
-  return PERSONAS.every((p) => {
-    const s = sectionOrder(p);
-    return s.length === ALL_SECTIONS.length && ALL_SECTIONS.every((k) => s.includes(k));
-  });
-}
 
 // ── Needs-attention ranking ──────────────────────────────────────────────────
 export interface AttentionInfo {

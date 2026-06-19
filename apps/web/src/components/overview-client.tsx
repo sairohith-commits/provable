@@ -14,8 +14,16 @@ import type {
   VisibilityRow,
 } from '@/lib/types';
 import type { TaskGovernanceView } from '@provable/contracts';
-import { PERSONAS, type Persona, type SectionKey } from '@/lib/view-helpers';
-import { type AgentGroup, groupByAgent } from '@/lib/fleet-view';
+import type { SectionKey } from '@/lib/view-helpers';
+import {
+  type AgentGroup,
+  type QueueFilter,
+  type QueueKind,
+  filterTasks,
+  groupByAgent,
+  queueEmptyCopy,
+  toggleFilter,
+} from '@/lib/fleet-view';
 import { relativeTime, shortSubject } from '@/lib/format';
 import { FleetRow } from './fleet-row';
 import { FreeSetPanel } from './free-set-panel';
@@ -44,25 +52,63 @@ function KpiCard({
   sub,
   tone,
   title,
+  onClick,
+  selected,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: 'attention' | 'projection';
   title?: string;
+  onClick?: () => void;
+  selected?: boolean;
 }) {
-  return (
-    <div className={`kpi glass${tone ? ` kpi-${tone}` : ''}`} title={title} data-kpi={label}>
+  const cls = `kpi glass${tone ? ` kpi-${tone}` : ''}${onClick ? ' kpi-filter' : ''}${
+    selected ? ' kpi-selected' : ''
+  }`;
+  const body = (
+    <>
       <span className="kpi-value">{value}</span>
       <span className="kpi-label">{label}</span>
       {sub ? <span className="kpi-sub">{sub}</span> : null}
+    </>
+  );
+  // A clickable counter is a real button (keyboard + a11y); a static counter stays a div.
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={cls}
+        title={title}
+        data-kpi={label}
+        data-selected={selected ? 'true' : undefined}
+        aria-pressed={selected ?? false}
+        onClick={onClick}
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className={cls} title={title} data-kpi={label}>
+      {body}
     </div>
   );
 }
 
 // KPI strip — the three governance counts bind to the reconciled fleet KPIs (so they can never
 // disagree with the rows); cost + ROI stay as-is.
-function KpiRow({ summary, kpis }: { summary: SummaryView; kpis: FleetKpis }) {
+function KpiRow({
+  summary,
+  kpis,
+  filter,
+  onToggle,
+}: {
+  summary: SummaryView;
+  kpis: FleetKpis;
+  filter: QueueFilter;
+  onToggle: (kind: QueueKind) => void;
+}) {
   const s = summary;
   const roiAssumptions = `assumes ${s.roi.assumptions.assumedHumanMinutesPerDecision} min/decision @ ${usd(
     s.roi.assumptions.assumedHumanHourlyUsd,
@@ -73,11 +119,17 @@ function KpiRow({ summary, kpis }: { summary: SummaryView; kpis: FleetKpis }) {
         label="Promotable"
         value={String(kpis.promotableNow)}
         tone={kpis.promotableNow > 0 ? 'attention' : undefined}
+        title="Filter the list to agents ready to advance"
+        onClick={() => onToggle('promotable')}
+        selected={filter === 'promotable'}
       />
       <KpiCard
         label="Needs attention"
         value={String(kpis.needsAttention)}
         tone={kpis.needsAttention > 0 ? 'attention' : undefined}
+        title="Filter the list to agents that need attention"
+        onClick={() => onToggle('attention')}
+        selected={filter === 'attention'}
       />
       <KpiCard label="Governed" value={String(kpis.tasksGoverned)} sub={`${s.agentsTotal} agents`} />
       <KpiCard
@@ -98,7 +150,8 @@ function KpiRow({ summary, kpis }: { summary: SummaryView; kpis: FleetKpis }) {
 
 export function OverviewClient({ initial, role }: { initial: OverviewData; role: Role }) {
   const [data, setData] = useState<OverviewData>(initial);
-  const [persona, setPersona] = useState<Persona>('All');
+  // Work-queue filter (U5): the Promotable / Needs-attention counters select over the list.
+  const [filter, setFilter] = useState<QueueFilter>(null);
   const [pending, setPending] = useState<string | null>(null);
   // UX-only (NOT the security boundary): hide the approve control for roles without the
   // permission. The API independently enforces approve_transition on every call.
@@ -133,36 +186,23 @@ export function OverviewClient({ initial, role }: { initial: OverviewData; role:
     [refresh],
   );
 
-  const groups = useMemo(() => groupByAgent(data.fleet.tasks), [data.fleet.tasks]);
-  const attentionCount = data.fleet.kpis.needsAttention;
+  // The counters ARE the filter: group only the tasks in the selected work queue.
+  const groups = useMemo(
+    () => groupByAgent(filterTasks(data.fleet.tasks, filter)),
+    [data.fleet.tasks, filter],
+  );
+  const onToggle = useCallback((kind: QueueKind) => setFilter((cur) => toggleFilter(cur, kind)), []);
 
-  // Overview = the Readiness cockpit (KPIs + persona pills + fleet rows) with the Governance
+  // Overview = the Readiness cockpit (KPI work-queue counters + fleet rows) with the Governance
   // transition log below as collapsible history. The other pillars live on their own routes (U3).
   return (
     <PillarShell role={role}>
       <div className="overview">
-        <KpiRow summary={data.summary} kpis={data.fleet.kpis} />
-
-        <nav className="persona-lens" aria-label="persona lens">
-          {PERSONAS.map((p) => (
-            <button
-              key={p}
-              className={p === persona ? 'lens active' : 'lens'}
-              onClick={() => setPersona(p)}
-              data-persona={p}
-            >
-              {p}
-            </button>
-          ))}
-          {attentionCount > 0 ? (
-            <span className="attention-pill" title="rows needing attention">
-              {attentionCount} need{attentionCount === 1 ? 's' : ''} attention
-            </span>
-          ) : null}
-        </nav>
+        <KpiRow summary={data.summary} kpis={data.fleet.kpis} filter={filter} onToggle={onToggle} />
 
         <ReadinessSection
           groups={groups}
+          filter={filter}
           pending={pending}
           onApprove={approve}
           canApprove={canApprove}
@@ -184,6 +224,7 @@ export function OverviewClient({ initial, role }: { initial: OverviewData; role:
 // ── Readiness — fleet rows grouped by agent, fed from /overview/fleet (U2) ─────────
 function ReadinessSection({
   groups,
+  filter,
   pending,
   onApprove,
   canApprove,
@@ -191,17 +232,23 @@ function ReadinessSection({
   onSetMode,
 }: {
   groups: AgentGroup[];
+  filter: QueueFilter;
   pending: string | null;
   onApprove: (a: string, t: string) => void;
   canApprove: boolean;
   canFreeSet: boolean;
   onSetMode: (task: TaskGovernanceView) => void;
 }) {
+  // Empty list: a filtered queue gets its own honest copy; the unfiltered list keeps the
+  // "nothing reporting" message. (queueEmptyCopy returns null when filter === null.)
+  const emptyCopy = queueEmptyCopy(filter) ?? 'No agents reporting yet.';
   return (
     <section className="pillar" data-section="readiness">
       <h2>{SECTION_TITLE.readiness}</h2>
       {groups.length === 0 ? (
-        <p className="empty">No agents reporting yet.</p>
+        <p className="empty" data-readiness-empty={filter ?? 'all'}>
+          {emptyCopy}
+        </p>
       ) : (
         groups.map((group) => (
           <div className="fleet-group" key={group.agentKey} data-agent-group={group.agentKey}>
