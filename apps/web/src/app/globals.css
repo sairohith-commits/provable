@@ -469,3 +469,311 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
   word-break: break-all; margin-bottom: 14px;
 }
 .modal-actions { display: flex; gap: 10px; }
+
+/* ── Fleet read-model (Phase U2) ─────────────────────────────────────────────── */
+/* Ladder dot/ring/lock — the dot is the readiness score, the ring the operating band. */
+.lad-dot {
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.lad-ring {
+  top: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: transparent;
+}
+.lad-lock {
+  left: 50% !important;
+  top: -1px;
+  color: var(--danger);
+  display: inline-flex;
+}
+.ladder-zones.dimmed {
+  opacity: 0.5;
+}
+
+/* Status chip — closed tone map keyed by data-tone. */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.status-chip[data-tone='info'] {
+  color: var(--band-copilot);
+  background: color-mix(in srgb, var(--band-copilot) 12%, white);
+  border-color: color-mix(in srgb, var(--band-copilot) 35%, white);
+}
+.status-chip[data-tone='warning'] {
+  color: var(--band-shadow);
+  background: color-mix(in srgb, var(--band-shadow) 14%, white);
+  border-color: color-mix(in srgb, var(--band-shadow) 35%, white);
+}
+.status-chip[data-tone='danger'] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, white);
+  border-color: color-mix(in srgb, var(--danger) 35%, white);
+}
+.status-chip[data-tone='neutral'] {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, white);
+}
+.status-chip[data-tone='muted'] {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 8%, white);
+}
+
+/* Fleet group + rows */
+.fleet-group {
+  margin-bottom: 14px;
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+}
+.group-head .agent-key {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.group-count {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.fleet-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.fleet-row {
+  display: grid;
+  grid-template-columns: 1.2fr 2fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.fleet-id {
+  display: flex;
+  flex-direction: column;
+}
+.fleet-id .task-key {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.reason-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0;
+}
+.fleet-action {
+  justify-self: end;
+}
+.row-link {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── App shell: left sidebar + content (Phase U3) ─────────────────────────────── */
+.pillar-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+.sidebar {
+  flex: 0 0 208px;
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 10px;
+}
+.sidebar.collapsed {
+  flex-basis: 56px;
+}
+.sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .sidebar-group-label {
+  display: none;
+}
+.sidebar-toggle {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+}
+.sidebar-group {
+  display: grid;
+  gap: 4px;
+}
+.sidebar-group-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 8px;
+}
+.sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.sidebar-link:hover {
+  background: color-mix(in srgb, var(--band-copilot) 8%, transparent);
+}
+.sidebar-link.active {
+  background: color-mix(in srgb, var(--band-copilot) 14%, white);
+  color: var(--band-copilot);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--band-copilot);
+}
+.sidebar-icon {
+  flex: 0 0 auto;
+}
+.pillar-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+@media (max-width: 860px) {
+  .sidebar {
+    flex-basis: 56px;
+  }
+  .sidebar .sidebar-label,
+  .sidebar .sidebar-group-label {
+    display: none;
+  }
+}
+
+/* Collapsible transition history under the cockpit */
+.transition-history > summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  padding: 8px 0;
+  color: var(--muted);
+}
+
+/* ── Sheet (free-set slide-over) ───────────────────────────────────────────────── */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 32, 43, 0.35);
+  backdrop-filter: blur(2px);
+}
+.sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(420px, 92vw);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: 14px 0 0 14px;
+  box-shadow: -8px 0 30px rgba(24, 32, 43, 0.18);
+  overflow-y: auto;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sheet-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  margin: 0;
+}
+.sheet-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+}
+.sheet-desc {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  margin: 0;
+}
+.sheet-body {
+  display: grid;
+  gap: 14px;
+}
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.field select,
+.field textarea {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.field-actor {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+.fs-invariants {
+  font-size: 0.82rem;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--band-shadow) 10%, white);
+  border: 1px solid color-mix(in srgb, var(--band-shadow) 30%, white);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0;
+}
+.sheet-actions {
+  margin-top: auto;
+}
+.row-link {
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 8px;
+}

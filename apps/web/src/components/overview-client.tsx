@@ -1,9 +1,10 @@
 'use client';
 
 import { type Role, can } from '@provable/contracts';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CostView,
+  FleetKpis,
   OverviewData,
   RegistryAgentRow,
   SafetyView,
@@ -12,15 +13,13 @@ import type {
   VerdictMix,
   VisibilityRow,
 } from '@/lib/types';
-import {
-  PERSONAS,
-  type Persona,
-  type SectionKey,
-  attentionFor,
-  sectionOrder,
-  sortReadinessRows,
-} from '@/lib/view-helpers';
-import { ReadinessLadder } from './readiness-ladder';
+import type { TaskGovernanceView } from '@provable/contracts';
+import { PERSONAS, type Persona, type SectionKey } from '@/lib/view-helpers';
+import { type AgentGroup, groupByAgent } from '@/lib/fleet-view';
+import { FleetRow } from './fleet-row';
+import { FreeSetPanel } from './free-set-panel';
+import { PillarShell } from './pillar-shell';
+import { StatusChip } from './status-chip';
 
 const POLL_MS = 4000;
 
@@ -60,25 +59,26 @@ function KpiCard({
   );
 }
 
-function KpiRow({ summary }: { summary: SummaryView }) {
+// KPI strip — the three governance counts bind to the reconciled fleet KPIs (so they can never
+// disagree with the rows); cost + ROI stay as-is.
+function KpiRow({ summary, kpis }: { summary: SummaryView; kpis: FleetKpis }) {
   const s = summary;
   const roiAssumptions = `assumes ${s.roi.assumptions.assumedHumanMinutesPerDecision} min/decision @ ${usd(
     s.roi.assumptions.assumedHumanHourlyUsd,
   )}/hr · ${s.roi.shadowDecisionVolume} Shadow decisions`;
   return (
     <div className="kpi-row" data-kpi-row>
-      <KpiCard label="Active agents" value={String(s.activeAgents)} sub={`${s.agentsTotal} total`} />
       <KpiCard
-        label="Pending approvals"
-        value={String(s.pendingApprovals)}
-        tone={s.pendingApprovals > 0 ? 'attention' : undefined}
+        label="Promotable"
+        value={String(kpis.promotableNow)}
+        tone={kpis.promotableNow > 0 ? 'attention' : undefined}
       />
       <KpiCard
-        label="Guardrail trips"
-        value={String(s.suspendedCount)}
-        sub={`${s.guardrailEventCount} safety events`}
-        tone={s.suspendedCount > 0 ? 'attention' : undefined}
+        label="Needs attention"
+        value={String(kpis.needsAttention)}
+        tone={kpis.needsAttention > 0 ? 'attention' : undefined}
       />
+      <KpiCard label="Governed" value={String(kpis.tasksGoverned)} sub={`${s.agentsTotal} agents`} />
       <KpiCard
         label="Token spend"
         value={s.hasCostSignal ? s.tokenSpend.toLocaleString() : '—'}
@@ -99,10 +99,11 @@ export function OverviewClient({ initial, role }: { initial: OverviewData; role:
   const [data, setData] = useState<OverviewData>(initial);
   const [persona, setPersona] = useState<Persona>('All');
   const [pending, setPending] = useState<string | null>(null);
-  // UX-only (NOT the security boundary): hide the Approve control for roles without the
+  // UX-only (NOT the security boundary): hide the approve control for roles without the
   // permission. The API independently enforces approve_transition on every call.
   const canApprove = can(role, 'approve_transition');
   const canFreeSet = can(role, 'free_set_mode');
+  const [override, setOverride] = useState<TaskGovernanceView | null>(null);
 
   const refresh = useCallback(async () => {
     const res = await fetch('/api/overview', { cache: 'no-store' });
@@ -131,192 +132,108 @@ export function OverviewClient({ initial, role }: { initial: OverviewData; role:
     [refresh],
   );
 
-  const setMode = useCallback(
-    async (agentKey: string, taskKey: string, mode: string, reason: string) => {
-      setPending(`${agentKey}:${taskKey}`);
-      try {
-        await fetch('/api/set-mode', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ agentKey, taskKey, mode, reason }),
-        });
-        await refresh();
-      } finally {
-        setPending(null);
-      }
-    },
-    [refresh],
-  );
+  const groups = useMemo(() => groupByAgent(data.fleet.tasks), [data.fleet.tasks]);
+  const attentionCount = data.fleet.kpis.needsAttention;
 
-  // Standing-divergence labels: the latest MANUAL_OVERRIDE actor per agent×task (audit-sourced).
-  const overrideActor = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const t of data.transitions) {
-      if (t.trigger === 'MANUAL_OVERRIDE' && t.actor) m.set(`${t.agentKey}:${t.taskKey}`, t.actor);
-    }
-    return m;
-  }, [data.transitions]);
-
-  const ranked = useMemo(
-    () => sortReadinessRows(data.agents, data.transitions),
-    [data.agents, data.transitions],
-  );
-  const attentionCount = ranked.filter((r) => r.attention.needsAttention).length;
-
-  const order = sectionOrder(persona);
-
-  const sections: Record<SectionKey, ReactNode> = {
-    readiness: (
-      <ReadinessSection
-        key="readiness"
-        ranked={ranked}
-        pending={pending}
-        onApprove={approve}
-        canApprove={canApprove}
-        onSetMode={setMode}
-        canFreeSet={canFreeSet}
-        overrideActor={overrideActor}
-      />
-    ),
-    governance: <GovernanceSection key="governance" transitions={data.transitions} />,
-    visibility: <VisibilitySection key="visibility" rows={data.visibility} />,
-    cost: <CostSection key="cost" cost={data.cost} />,
-    guardrails: <GuardrailsSection key="guardrails" safety={data.guardrails} />,
-    registry: <RegistrySection key="registry" agents={data.registry} />,
-  };
-
+  // Overview = the Readiness cockpit (KPIs + persona pills + fleet rows) with the Governance
+  // transition log below as collapsible history. The other pillars live on their own routes (U3).
   return (
-    <div className="overview">
-      <KpiRow summary={data.summary} />
+    <PillarShell role={role}>
+      <div className="overview">
+        <KpiRow summary={data.summary} kpis={data.fleet.kpis} />
 
-      <nav className="persona-lens" aria-label="persona lens">
-        {PERSONAS.map((p) => (
-          <button
-            key={p}
-            className={p === persona ? 'lens active' : 'lens'}
-            onClick={() => setPersona(p)}
-            data-persona={p}
-          >
-            {p}
-          </button>
-        ))}
-        {attentionCount > 0 ? (
-          <span className="attention-pill" title="rows needing attention">
-            {attentionCount} need{attentionCount === 1 ? 's' : ''} attention
-          </span>
-        ) : null}
-      </nav>
+        <nav className="persona-lens" aria-label="persona lens">
+          {PERSONAS.map((p) => (
+            <button
+              key={p}
+              className={p === persona ? 'lens active' : 'lens'}
+              onClick={() => setPersona(p)}
+              data-persona={p}
+            >
+              {p}
+            </button>
+          ))}
+          {attentionCount > 0 ? (
+            <span className="attention-pill" title="rows needing attention">
+              {attentionCount} need{attentionCount === 1 ? 's' : ''} attention
+            </span>
+          ) : null}
+        </nav>
 
-      {order.map((key) => sections[key])}
-    </div>
+        <ReadinessSection
+          groups={groups}
+          pending={pending}
+          onApprove={approve}
+          canApprove={canApprove}
+          canFreeSet={canFreeSet}
+          onSetMode={setOverride}
+        />
+
+        <details className="transition-history" data-transition-history>
+          <summary>Transition history</summary>
+          <GovernanceSection transitions={data.transitions} />
+        </details>
+      </div>
+
+      <FreeSetPanel task={override} actor="you" onClose={() => setOverride(null)} onDone={refresh} />
+    </PillarShell>
   );
 }
 
-// ── Readiness ────────────────────────────────────────────────────────────────
+// ── Readiness — fleet rows grouped by agent, fed from /overview/fleet (U2) ─────────
 function ReadinessSection({
-  ranked,
+  groups,
   pending,
   onApprove,
   canApprove,
-  onSetMode,
   canFreeSet,
-  overrideActor,
+  onSetMode,
 }: {
-  ranked: ReturnType<typeof sortReadinessRows>;
+  groups: AgentGroup[];
   pending: string | null;
   onApprove: (a: string, t: string) => void;
   canApprove: boolean;
-  onSetMode: (a: string, t: string, mode: string, reason: string) => void;
   canFreeSet: boolean;
-  overrideActor: Map<string, string>;
+  onSetMode: (task: TaskGovernanceView) => void;
 }) {
   return (
     <section className="pillar" data-section="readiness">
       <h2>{SECTION_TITLE.readiness}</h2>
-      {ranked.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="empty">No agents reporting yet.</p>
       ) : (
-        <ul className="agent-list">
-          {ranked.map(({ row, attention }) => {
-            const id = `${row.agentKey}:${row.taskKey}`;
-            return (
-              <li
-                key={id}
-                className={`agent-row glass${attention.needsAttention ? ' attention' : ''}`}
-                data-attention={attention.needsAttention ? attention.rank : 0}
-              >
-                <div className="agent-id">
-                  <span className="agent-key">{row.agentKey}</span>
-                  <span className="task-key">{row.taskKey}</span>
-                  <span className="flags">
-                    {attention.pendingApproval ? <span className="flag flag-pending">pending approval</span> : null}
-                    {attention.suspended ? <span className="flag flag-suspended">suspended</span> : null}
-                    {attention.demoted ? <span className="flag flag-demoted">demoted</span> : null}
-                    {attention.lowScore ? <span className="flag flag-low">low score</span> : null}
-                  </span>
-                </div>
-                <ReadinessLadder score={row.score} effectiveMode={row.effectiveMode} />
-                {overrideActor.has(id) ? (
-                  <span className="flag flag-override" data-override>
-                    manual override by {overrideActor.get(id)}
-                  </span>
-                ) : null}
-                {attention.pendingApproval && canApprove ? (
-                  <button
-                    className="approve"
-                    disabled={pending === id}
-                    onClick={() => onApprove(row.agentKey, row.taskKey)}
-                  >
-                    {pending === id ? 'Approving…' : 'Approve promotion'}
-                  </button>
-                ) : null}
-                {canFreeSet ? (
-                  <FreeSetControl
-                    busy={pending === id}
-                    onSet={(mode, reason) => onSetMode(row.agentKey, row.taskKey, mode, reason)}
-                  />
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+        groups.map((group) => (
+          <div className="fleet-group" key={group.agentKey} data-agent-group={group.agentKey}>
+            <header className="group-head">
+              <span className="agent-key">{group.agentKey}</span>
+              <span className="group-count">
+                {group.count} task{group.count === 1 ? '' : 's'}
+              </span>
+              {/* worst-status summary for the agent */}
+              <StatusChip task={{ ...group.tasks[0]!, status: group.worst, headroomTo: null }} />
+            </header>
+            <ul className="fleet-list">
+              {group.tasks.map((task) => (
+                <FleetRow
+                  key={`${task.agentKey}:${task.taskKey}`}
+                  task={task}
+                  canApprove={canApprove}
+                  canFreeSet={canFreeSet}
+                  busy={pending === `${task.agentKey}:${task.taskKey}`}
+                  onApprove={onApprove}
+                  onSetMode={onSetMode}
+                />
+              ))}
+            </ul>
+          </div>
+        ))
       )}
     </section>
   );
 }
 
-// free_set_mode control (Owner/Approver, UX-gated). Reason REQUIRED; the API is authoritative.
-function FreeSetControl({ busy, onSet }: { busy: boolean; onSet: (mode: string, reason: string) => void }) {
-  const [mode, setMode] = useState('SHADOW');
-  const [reason, setReason] = useState('');
-  return (
-    <div className="free-set" data-free-set>
-      <select value={mode} onChange={(e) => setMode(e.target.value)} aria-label="set mode" data-mode-select>
-        <option value="SHADOW">Shadow</option>
-        <option value="CO_PILOT">Co-Pilot</option>
-        <option value="SOLO">Solo</option>
-      </select>
-      <input
-        className="reason-input"
-        placeholder="reason (required)"
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        data-reason
-      />
-      <button
-        className="lens"
-        disabled={busy || reason.trim().length === 0}
-        onClick={() => onSet(mode, reason.trim())}
-        data-set-mode
-      >
-        Set mode
-      </button>
-    </div>
-  );
-}
-
 // ── Governance (audit feed) ──────────────────────────────────────────────────
-function GovernanceSection({ transitions }: { transitions: TransitionView[] }) {
+export function GovernanceSection({ transitions }: { transitions: TransitionView[] }) {
   return (
     <section className="pillar" data-section="governance">
       <h2>{SECTION_TITLE.governance}</h2>
@@ -390,7 +307,7 @@ function pct(n: number | null): string {
   return n === null ? '—' : `${(n * 100).toFixed(0)}%`;
 }
 
-function VisibilitySection({ rows }: { rows: VisibilityRow[] }) {
+export function VisibilitySection({ rows }: { rows: VisibilityRow[] }) {
   return (
     <section className="pillar" data-section="visibility">
       <h2>{SECTION_TITLE.visibility}</h2>
@@ -428,7 +345,7 @@ function VisibilitySection({ rows }: { rows: VisibilityRow[] }) {
 }
 
 // ── Cost & ROI ───────────────────────────────────────────────────────────────
-function CostSection({ cost }: { cost: CostView }) {
+export function CostSection({ cost }: { cost: CostView }) {
   const { org, roi } = cost;
   return (
     <section className="pillar" data-section="cost">
@@ -490,7 +407,7 @@ function CostSection({ cost }: { cost: CostView }) {
 }
 
 // ── Guardrails & Safety ──────────────────────────────────────────────────────
-function GuardrailsSection({ safety }: { safety: SafetyView }) {
+export function GuardrailsSection({ safety }: { safety: SafetyView }) {
   const { events, suspended } = safety;
   return (
     <section className="pillar" data-section="guardrails">
@@ -532,7 +449,7 @@ function fmtDate(s: string | null): string {
   return s === null ? '—' : new Date(s).toISOString().slice(0, 10);
 }
 
-function RegistrySection({ agents }: { agents: RegistryAgentRow[] }) {
+export function RegistrySection({ agents }: { agents: RegistryAgentRow[] }) {
   return (
     <section className="pillar" data-section="registry">
       <h2>{SECTION_TITLE.registry}</h2>
@@ -573,5 +490,3 @@ function RegistrySection({ agents }: { agents: RegistryAgentRow[] }) {
     </section>
   );
 }
-
-export { attentionFor };

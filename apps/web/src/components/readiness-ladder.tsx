@@ -1,109 +1,43 @@
-import type { AutonomyMode } from '@provable/contracts';
-import type { ImpliedBand, ScoreView } from '@/lib/types';
-import { ladderMarkers } from '@/lib/view-helpers';
+import type { AutonomyMode, GovernanceStatus } from '@provable/contracts';
+import { ladderGeometry } from '@/lib/fleet-view';
 
-// The READINESS LADDER — the signature component. A 3-zone Shadow/Co-Pilot/Solo bar whose
-// zone widths are the REAL band thresholds (40/30/30, NOT equal thirds — Readiness fix #4),
-// so a marker's position reads true against its band.
-//
-// TWO MARKERS make the governance asymmetry visible (Readiness fix #1):
-//   • SOLID  marker = the effective OPERATING mode (band center)
-//   • GHOST  marker = the score-IMPLIED band (band center) — the target
-// The gap between them is the ungoverned headroom (classify: Solo-implied, Co-Pilot
-// operating). Where score-band == mode the two markers coincide (no gap). A thin tick marks
-// the precise readiness score.
-
-const BAND_COLOR: Record<ImpliedBand, string> = {
-  SHADOW: 'var(--band-shadow)',
-  CO_PILOT: 'var(--band-copilot)',
-  SOLO: 'var(--band-solo)',
-};
-
-function bandLabel(b: string): string {
-  return b === 'CO_PILOT' ? 'Co-Pilot' : b === 'SOLO' ? 'Solo' : b === 'SHADOW' ? 'Shadow' : b;
-}
-
+/**
+ * The signature element (Phase U2). A 3-zone bar (Shadow amber / Co-Pilot blue / Solo emerald),
+ * a SOLID dot at the readiness score, and a HOLLOW ring at the operating band-center — the gap
+ * between them IS the governance story. Pure presentation: it renders `ladderGeometry` verbatim.
+ *   • SUSPENDED → danger lock at center; the operating ring is suppressed.
+ *   • unscored (score == null) → bar dimmed, ring only, NO dot.
+ */
 export function ReadinessLadder({
   score,
   effectiveMode,
+  status,
 }: {
-  score: ScoreView | null;
+  score: number | null;
+  impliedBand: AutonomyMode | null;
   effectiveMode: AutonomyMode;
+  status: GovernanceStatus;
 }) {
-  const scored = score?.status === 'SCORED' && typeof score.readinessScore === 'number';
-  const value = scored ? Math.max(0, Math.min(100, score.readinessScore as number)) : null;
-  const implied = (score?.impliedBand ?? null) as ImpliedBand | null;
-  const m = ladderMarkers(score, effectiveMode);
-
+  const g = ladderGeometry(score, effectiveMode, status);
   return (
-    <div className="ladder">
-      <div className="ladder-zones" aria-hidden>
-        {/* zone widths = real bands 0–40 / 41–70 / 71–100 (fix #4) */}
-        <span className="zone zone-shadow" style={{ flex: 40 }} />
-        <span className="zone zone-copilot" style={{ flex: 30 }} />
-        <span className="zone zone-solo" style={{ flex: 30 }} />
+    <div className="ladder" data-dimmed={g.dimmed} data-status={status}>
+      <div className={`ladder-zones${g.dimmed ? ' dimmed' : ''}`} aria-hidden>
+        <span className="zone zone-shadow" style={{ flex: g.zones.shadow }} />
+        <span className="zone zone-copilot" style={{ flex: g.zones.copilot }} />
+        <span className="zone zone-solo" style={{ flex: g.zones.solo }} />
 
-        {/* headroom connector between effective (solid) and implied (ghost) */}
-        {m.gap && m.effectivePct !== null && m.impliedPct !== null ? (
-          <span
-            className="headroom"
-            style={{
-              left: `${Math.min(m.effectivePct, m.impliedPct)}%`,
-              width: `${Math.abs(m.impliedPct - m.effectivePct)}%`,
-            }}
-            aria-hidden
-          />
+        {g.ring !== null ? (
+          <span className="marker lad-ring" data-ring style={{ left: `${g.ring}%` }} title={`operating ${effectiveMode}`} />
         ) : null}
-
-        {/* precise score tick */}
-        {m.scorePct !== null ? (
-          <span
-            className="marker marker-score"
-            style={{ left: `${m.scorePct}%` }}
-            title={`readiness ${m.scorePct.toFixed(1)}`}
-          />
+        {g.dot !== null ? (
+          <span className="marker lad-dot" data-dot style={{ left: `${g.dot}%` }} title={`readiness ${g.dot.toFixed(0)}`} />
         ) : null}
-
-        {/* GHOST/target marker — score-implied band */}
-        {m.impliedPct !== null ? (
-          <span
-            className="marker marker-implied"
-            data-pct={m.impliedPct}
-            style={{ left: `${m.impliedPct}%` }}
-            title={`score implies ${implied ? bandLabel(implied) : ''}`}
-          />
-        ) : null}
-
-        {/* SOLID marker — effective operating mode */}
-        {m.effectivePct !== null ? (
-          <span
-            className="marker marker-effective"
-            data-pct={m.effectivePct}
-            style={{ left: `${m.effectivePct}%` }}
-            title={`operating ${bandLabel(effectiveMode)}`}
-          />
-        ) : null}
-      </div>
-
-      <div className="ladder-meta">
-        {scored && implied ? (
-          <>
-            <span className="score" style={{ color: BAND_COLOR[implied] }}>
-              {value!.toFixed(1)}
-            </span>
-            <span className="implied">implies {bandLabel(implied)}</span>
-          </>
-        ) : (
-          <span className="empty">
-            {score?.status === 'INSUFFICIENT' ? 'Insufficient signal - unscored' : 'No data yet'}
-          </span>
-        )}
-        <span className="effective">
-          operating: <strong>{effectiveMode}</strong>
-        </span>
-        {m.gap && implied ? (
-          <span className="headroom-note" title="ungoverned headroom: scored higher than it operates">
-            ▲ headroom: {bandLabel(effectiveMode)} → {bandLabel(implied)}
+        {g.lock ? (
+          <span className="marker lad-lock" data-lock title="suspended" aria-label="suspended">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+              <rect x="4" y="11" width="16" height="9" rx="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg>
           </span>
         ) : null}
       </div>

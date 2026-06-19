@@ -40,6 +40,7 @@ const EMPTY: OverviewData = {
     roi: ROI_EMPTY,
     apiKeyPrefix: null,
   },
+  fleet: { tasks: [], kpis: { promotableNow: 0, needsAttention: 0, tasksGoverned: 0 } },
 };
 
 // Polled by the client overview so a running climb visibly updates (no SSE).

@@ -1,0 +1,80 @@
+import type { TaskGovernanceView } from '@provable/contracts';
+import { rowAction } from '@/lib/fleet-view';
+import { ReadinessLadder } from './readiness-ladder';
+import { StatusChip } from './status-chip';
+
+/**
+ * One fleet task row (Phase U2): label · ladder · status chip · reasonNote · action. Renders a
+ * TaskGovernanceView verbatim — no data logic. The approve affordance exists ONLY inside the
+ * `rowAction` 'approve' branch, which is reachable only when `actionAvailable === true` — so it
+ * is structurally impossible to render an approve button for a non-actionable task.
+ */
+export function FleetRow({
+  task,
+  canApprove,
+  canFreeSet,
+  busy,
+  onApprove,
+  onSetMode,
+}: {
+  task: TaskGovernanceView;
+  canApprove: boolean;
+  canFreeSet: boolean;
+  busy: boolean;
+  onApprove: (agentKey: string, taskKey: string) => void;
+  onSetMode: (task: TaskGovernanceView) => void;
+}) {
+  const action = rowAction(task, canApprove);
+  // Free-set is available for operating rows (not terminal/retired). The HELD "Review" link also
+  // opens the free-set panel. data-set-mode is NEVER data-approve → integrity is preserved.
+  const canOverride = canFreeSet && task.effectiveMode !== 'RETIRED';
+  return (
+    <li className="fleet-row glass" data-task={`${task.agentKey}:${task.taskKey}`} data-status={task.status}>
+      <div className="fleet-id">
+        <span className="agent-key">{task.agentKey}</span>
+        <span className="task-key">{task.taskKey}</span>
+      </div>
+
+      <ReadinessLadder
+        score={task.score}
+        impliedBand={task.impliedBand}
+        effectiveMode={task.effectiveMode}
+        status={task.status}
+      />
+
+      <StatusChip task={task} />
+
+      <p className="reason-note" data-reason-note>
+        {task.reasonNote}
+      </p>
+
+      <div className="fleet-action">
+        {action === null ? null : action.kind === 'approve' ? (
+          <button
+            className="approve"
+            data-approve
+            disabled={busy}
+            onClick={() => onApprove(task.agentKey, task.taskKey)}
+          >
+            {busy ? 'Working…' : action.label}
+          </button>
+        ) : action.kind === 'review' ? (
+          // HELD → "Review" opens the free-set panel (never an approve).
+          <button className="row-link" data-row-link="review" onClick={() => onSetMode(task)}>
+            {action.label}
+          </button>
+        ) : (
+          // DEGRADED / SUSPENDED → quiet detail link. Never approve.
+          <span className="row-link" data-row-link={action.kind} role="link" tabIndex={0}>
+            {action.label}
+          </span>
+        )}
+        {canOverride ? (
+          <button className="row-link" data-set-mode onClick={() => onSetMode(task)}>
+            Set mode
+          </button>
+        ) : null}
+      </div>
+    </li>
+  );
+}

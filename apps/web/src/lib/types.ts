@@ -1,6 +1,7 @@
-import type { AgentIdentityState, AutonomyMode, Transition } from '@provable/contracts';
+import type { AgentIdentityState, AutonomyMode, FleetOverview, Transition } from '@provable/contracts';
 
 export type { Transition };
+export type { FleetOverview, TaskGovernanceView, FleetKpis, GovernanceStatus } from '@provable/contracts';
 
 export type ImpliedBand = 'SHADOW' | 'CO_PILOT' | 'SOLO';
 
@@ -147,4 +148,5 @@ export interface OverviewData {
   cost: CostView;
   guardrails: SafetyView;
   summary: SummaryView;
+  fleet: FleetOverview; // Phase U1/U2: one derived status per task + reconciled KPIs
 }

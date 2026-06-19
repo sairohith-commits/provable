@@ -4,6 +4,7 @@ import { clerkClient } from '@clerk/nextjs/server';
 import {
   getAgents,
   getCost,
+  getFleet,
   getGuardrails,
   getRegistry,
   getSummary,
@@ -47,7 +48,7 @@ function withApprover(t: Transition, names: Map<string, string>): TransitionView
 /** Load every pillar for an org in one shot, resolving approver ids to human names.
  *  `subject` is the caller's provider subject — forwarded so the API can role-gate the reads. */
 export async function loadOverview(orgId: string, subject: string): Promise<OverviewData> {
-  const [agents, transitions, registry, visibility, cost, guardrails, summary] = await Promise.all([
+  const [agents, transitions, registry, visibility, cost, guardrails, summary, fleet] = await Promise.all([
     getAgents(orgId, subject),
     getTransitions(orgId, subject),
     getRegistry(orgId, subject),
@@ -55,6 +56,7 @@ export async function loadOverview(orgId: string, subject: string): Promise<Over
     getCost(orgId, subject),
     getGuardrails(orgId, subject),
     getSummary(orgId, subject),
+    getFleet(orgId, subject),
   ]);
 
   const approverIds = [...transitions, ...guardrails.events]
@@ -73,5 +75,6 @@ export async function loadOverview(orgId: string, subject: string): Promise<Over
       events: guardrails.events.map((e) => withApprover(e, names)),
     },
     summary,
+    fleet,
   };
 }

@@ -5,6 +5,7 @@ import { apiUrl, internalToken } from './env';
 import type {
   AgentRow,
   CostView,
+  FleetOverview,
   RegistryAgentRow,
   SafetyView,
   SummaryView,
@@ -82,6 +83,13 @@ export async function getRegistry(orgId: string, subject: string): Promise<Regis
   const res = await fetch(`${apiUrl}/registry`, { headers: readHeaders(orgId, subject), cache: 'no-store' });
   if (!res.ok) throw new Error(`GET /registry failed: ${res.status}`);
   return ((await res.json()) as { agents: RegistryAgentRow[] }).agents;
+}
+
+/** Phase U1/U2: the fleet governance read-model — one derived status per task + reconciled KPIs. */
+export async function getFleet(orgId: string, subject: string): Promise<FleetOverview> {
+  const res = await fetch(`${apiUrl}/overview/fleet`, { headers: readHeaders(orgId, subject), cache: 'no-store' });
+  if (!res.ok) throw new Error(`GET /overview/fleet failed: ${res.status}`);
+  return (await res.json()) as FleetOverview;
 }
 
 export async function getVisibility(orgId: string, subject: string): Promise<VisibilityRow[]> {
