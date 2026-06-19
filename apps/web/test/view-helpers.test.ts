@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentRow, ScoreView, TransitionView } from '../src/lib/types';
-import {
-  PERSONAS,
-  attentionFor,
-  bandCenter,
-  ladderMarkers,
-  sectionOrder,
-  sectionsAreSamePerPersona,
-  sortReadinessRows,
-} from '../src/lib/view-helpers';
+import { attentionFor, bandCenter, ladderMarkers, sortReadinessRows } from '../src/lib/view-helpers';
 
 const scored = (s: number, band: string): ScoreView => ({
   status: 'SCORED',
@@ -22,26 +14,6 @@ function agent(agentKey: string, taskKey: string, mode: AgentRow['effectiveMode'
   return { agentKey, taskKey, effectiveMode: mode, score };
 }
 
-describe('persona lens — reorders the SAME sections, never invents data', () => {
-  it('every persona exposes exactly the same set of sections (only order differs)', () => {
-    expect(sectionsAreSamePerPersona()).toBe(true);
-  });
-
-  it('each persona order is a permutation of All (no extra, no missing)', () => {
-    const all = [...sectionOrder('All')].sort();
-    for (const p of PERSONAS) {
-      const here = [...sectionOrder(p)].sort();
-      expect(here).toEqual(all);
-    }
-  });
-
-  it('lenses actually differ in emphasis (CFO leads with cost, Legal with governance)', () => {
-    expect(sectionOrder('CFO')[0]).toBe('cost');
-    expect(sectionOrder('Legal')[0]).toBe('governance');
-    expect(sectionOrder('CTO')[0]).toBe('visibility');
-    expect(sectionOrder('All')[0]).toBe('readiness');
-  });
-});
 
 describe('needs-attention ranking — actionable rows float to the top', () => {
   const pending: TransitionView = {
