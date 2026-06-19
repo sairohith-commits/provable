@@ -1,8 +1,11 @@
 import { type Server, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { type DeclarativeMapping, applyMapping } from '@provable/adapters';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { admin, at, makeApp, provision, resetDb, teardown } from './helpers.js';
+import { admin, at, internalHeaders, makeApp, provision, resetDb, teardown } from './helpers.js';
+
+const O3A_TOKEN = 'o3a-internal-token';
 
 // Phase O3a — Tier-2 connector engine: stored mapping, push + pull ingestion, SSRF guard, idempotency.
 const FEED_TOKEN = 'SECRET-FEED-TOKEN-do-not-return'; // pull credential; must never appear in a response
@@ -218,5 +221,50 @@ describe('tenant safety — org comes from the key, never the payload', () => {
     await ingest(key, id, [{ agent: 'x', task: 'y', id: 't-1', result: 'approved', res: 'ok' }]);
     expect(await admin.decision.count({ where: { orgId: 'org_t1' } })).toBe(1);
     expect(await admin.decision.count({ where: { orgId: 'org_t2' } })).toBe(0);
+  });
+});
+
+describe('DRY-RUN (Phase O3b) — same engine, no ingestion, governed-vs-observe-only', () => {
+  const dryRun = (headers: Record<string, string>, mapping: unknown, sample: unknown) =>
+    app.inject({ method: 'POST', url: '/connectors/dry-run', headers, payload: { mapping, sample } });
+
+  it('a record WITH verdict+outcome → governed; the returned event EQUALS applyMapping (no divergent logic)', async () => {
+    const key = await provision('org_dry_g');
+    const sample = { agent: 'a', task: 't', id: 'd-1', conf: 0.9, ts: at(0), result: 'approved', res: 'ok' };
+    const res = await dryRun(bearer(key), MAPPING, sample);
+    const body = res.json<{ ok: boolean; governed: boolean; event: unknown }>();
+    expect(body.ok).toBe(true);
+    expect(body.governed).toBe(true);
+    // The dry-run MUST run the real engine — assert byte-for-byte equality with applyMapping.
+    expect(body.event).toEqual(applyMapping(MAPPING as DeclarativeMapping, sample));
+    // …and it must NOT ingest anything.
+    expect(await admin.decision.count({ where: { orgId: 'org_dry_g' } })).toBe(0);
+  });
+
+  it('a record WITHOUT a verdict → observe-only (governed false), still no ingestion', async () => {
+    const key = await provision('org_dry_o');
+    const res = await dryRun(bearer(key), MAPPING, { agent: 'a', task: 't', id: 'd-2' });
+    const body = res.json<{ ok: boolean; governed: boolean }>();
+    expect(body.ok).toBe(true);
+    expect(body.governed).toBe(false);
+    expect(await admin.decision.count({ where: { orgId: 'org_dry_o' } })).toBe(0);
+  });
+
+  it('an invalid sample (missing externalRef) → ok:false with an error, never a crash', async () => {
+    const key = await provision('org_dry_e');
+    const res = await dryRun(bearer(key), MAPPING, { agent: 'a', task: 't' });
+    expect(res.json<{ ok: boolean; error: string }>().ok).toBe(false);
+  });
+
+  it('works over the INTERNAL (dashboard) auth path too — dual auth', async () => {
+    const orgId = 'org_dry_internal';
+    await provision(orgId); // seeds the Owner subject internalHeaders() forwards by default
+    const res = await dryRun(
+      internalHeaders(O3A_TOKEN, orgId),
+      MAPPING,
+      { agent: 'a', task: 't', id: 'd-3', result: 'approved', res: 'ok' },
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ governed: boolean }>().governed).toBe(true);
   });
 });

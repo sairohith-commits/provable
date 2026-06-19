@@ -11,6 +11,7 @@ export type IconName =
   | 'cost'
   | 'registry'
   | 'connect'
+  | 'connectors'
   | 'onboarding'
   | 'agents'
   | 'people';
@@ -34,6 +35,14 @@ const ITEMS: readonly NavDef[] = [
   { key: 'cost', label: 'Cost & ROI', href: '/cost', icon: 'cost', group: 'Govern' },
   { key: 'registry', label: 'Registry', href: '/registry', icon: 'registry', group: 'Govern' },
   { key: 'connect', label: 'Connect', href: '/connect', icon: 'connect', group: 'Manage' },
+  {
+    key: 'connectors',
+    label: 'Connectors',
+    href: '/connectors',
+    icon: 'connectors',
+    group: 'Manage',
+    perm: (r) => can(r, 'manage_agents'),
+  },
   {
     key: 'onboarding',
     label: 'Onboarding',

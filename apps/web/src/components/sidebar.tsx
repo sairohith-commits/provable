@@ -4,6 +4,7 @@ import type { Role } from '@provable/contracts';
 import {
   Activity,
   Boxes,
+  Cable,
   DollarSign,
   type LucideIcon,
   KeyRound,
@@ -25,6 +26,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   cost: DollarSign,
   registry: Boxes,
   connect: Plug,
+  connectors: Cable,
   onboarding: KeyRound,
   agents: Boxes,
   people: Users,

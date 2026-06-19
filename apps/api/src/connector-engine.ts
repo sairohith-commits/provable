@@ -1,12 +1,58 @@
 import { type DeclarativeMapping, type MappedEvent, applyMapping, parseMapping } from '@provable/adapters';
-import { connectorConfigRepo, withTenant } from '@provable/persistence';
+import { connectorConfigRepo, membershipRepo, withTenant } from '@provable/persistence';
+import { type Permission, can } from '@provable/contracts';
 import type { OrgId } from '@provable/contracts';
-import type { FastifyInstance } from 'fastify';
-import { authenticate, extractKey } from './auth.js';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { authenticate, extractKey, resolveInternal } from './auth.js';
 import { decryptSecret, encryptSecret, encryptionAvailable } from './crypto.js';
 import { recompute } from './recompute.js';
 import type { TrackBody } from './schemas.js';
 import { SsrfError, assertPullUrlAllowed } from './ssrf.js';
+
+/**
+ * Dual auth for connector routes (Phase O3b adds the dashboard path):
+ *  - INTERNAL (web↔api): a signed-in human, role-gated. The dashboard can't hold the org's machine
+ *    key (shown once, never stored), so the UI authenticates with the internal token + subject and
+ *    the API re-derives the role. Mutations require `permission`.
+ *  - MACHINE-KEY (data plane): the org's SDK key, full connector access (unchanged from O3a).
+ * Org always comes from the verified caller, never the payload.
+ */
+async function resolveConnectorOrg(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  permission?: Permission,
+): Promise<OrgId | null> {
+  const internal = resolveInternal(req.headers as Record<string, unknown>);
+  if (internal !== null) {
+    const role = await withTenant(internal.orgId, (tx) =>
+      membershipRepo.findRoleBySubject(tx, internal.orgId, internal.subject ?? ''),
+    );
+    if (role === null) {
+      await reply.code(403).send({ error: 'no role assigned' });
+      return null;
+    }
+    if (permission !== undefined && !can(role, permission)) {
+      await reply.code(403).send({ error: 'forbidden', need: permission });
+      return null;
+    }
+    return internal.orgId;
+  }
+  const orgId = await authenticate(extractKey(req.headers as Record<string, unknown>));
+  if (orgId === null) {
+    await reply.code(401).send({ error: 'unauthorized' });
+    return null;
+  }
+  return orgId;
+}
+
+/**
+ * The SINGLE governed-vs-observe-only classifier (Phase O3a/O3b). Used by BOTH the ingest summary
+ * and the dry-run preview so the preview can never disagree with what ingestion will do. A decision
+ * with a mapped verdict is governed (scoreable); without one it is observe-only.
+ */
+export function classifyGoverned(ev: MappedEvent): boolean {
+  return ev.type === 'decision' && ev.verdict !== undefined;
+}
 
 /**
  * Tier-2 connector ENGINE (Phase O3a) — stored per-org declarative mappings with PUSH and (manual)
@@ -67,7 +113,7 @@ async function ingestRecords(
       summary.errors.push({ index: i, message: (err as Error).message });
       continue;
     }
-    const governed = ev.type === 'decision' && ev.verdict !== undefined;
+    const governed = classifyGoverned(ev);
     try {
       const res = await recompute(orgId, toTrackBody(ev)); // idempotent on externalRef
       if ('notFound' in res) {
@@ -101,8 +147,8 @@ export function registerConnectorEngine(app: FastifyInstance): void {
   // Create a stored connector config. The source credential (if any) is encrypted; the response
   // NEVER includes it (the public row carries only `hasCredential`).
   app.post('/connectors', async (req, reply) => {
-    const orgId = await authenticate(extractKey(req.headers as Record<string, unknown>));
-    if (orgId === null) return reply.code(401).send({ error: 'unauthorized' });
+    const orgId = await resolveConnectorOrg(req, reply, 'manage_agents');
+    if (orgId === null) return;
 
     const body = (req.body ?? {}) as {
       name?: string;
@@ -134,16 +180,38 @@ export function registerConnectorEngine(app: FastifyInstance): void {
   });
 
   app.get('/connectors', async (req, reply) => {
-    const orgId = await authenticate(extractKey(req.headers as Record<string, unknown>));
-    if (orgId === null) return reply.code(401).send({ error: 'unauthorized' });
+    const orgId = await resolveConnectorOrg(req, reply, 'view');
+    if (orgId === null) return;
     const rows = await withTenant(orgId, (tx) => connectorConfigRepo.list(tx, orgId));
     return reply.send({ connectors: rows });
   });
 
+  // DRY-RUN (Phase O3b): run the REAL applyMapping on a pasted sample WITHOUT ingesting, and
+  // classify governed-vs-observe-only with the SAME classifier ingestion uses — the preview can
+  // never diverge from the engine.
+  app.post('/connectors/dry-run', async (req, reply) => {
+    const orgId = await resolveConnectorOrg(req, reply, 'view');
+    if (orgId === null) return;
+    const body = (req.body ?? {}) as { mapping?: unknown; sample?: unknown };
+    let mapping: DeclarativeMapping;
+    try {
+      mapping = parseMapping(body.mapping);
+    } catch (err) {
+      return reply.send({ ok: false, error: `invalid mapping: ${(err as Error).message}` });
+    }
+    let event: MappedEvent;
+    try {
+      event = applyMapping(mapping, body.sample); // the SAME engine ingestion runs
+    } catch (err) {
+      return reply.send({ ok: false, error: (err as Error).message });
+    }
+    return reply.send({ ok: true, event, governed: classifyGoverned(event) });
+  });
+
   // PUSH: arbitrary-shaped records → map → ingest → govern.
   app.post('/connectors/:id/ingest', async (req, reply) => {
-    const orgId = await authenticate(extractKey(req.headers as Record<string, unknown>));
-    if (orgId === null) return reply.code(401).send({ error: 'unauthorized' });
+    const orgId = await resolveConnectorOrg(req, reply, 'manage_agents');
+    if (orgId === null) return;
     const { id } = req.params as { id: string };
 
     const cfg = await withTenant(orgId, (tx) => connectorConfigRepo.getById(tx, orgId, id));
@@ -163,8 +231,8 @@ export function registerConnectorEngine(app: FastifyInstance): void {
 
   // PULL (manual trigger only — no scheduler): fetch a batch from source.url and run the pipeline.
   app.post('/connectors/:id/pull', async (req, reply) => {
-    const orgId = await authenticate(extractKey(req.headers as Record<string, unknown>));
-    if (orgId === null) return reply.code(401).send({ error: 'unauthorized' });
+    const orgId = await resolveConnectorOrg(req, reply, 'manage_agents');
+    if (orgId === null) return;
     const { id } = req.params as { id: string };
 
     const src = await withTenant(orgId, (tx) => connectorConfigRepo.getSourceSecret(tx, orgId, id));

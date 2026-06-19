@@ -434,6 +434,24 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
   background: var(--surface);
   color: var(--ink);
 }
+
+/* ── Connectors editor (Phase O3b) — locked tokens ───────────────────────────── */
+.conn-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 12px 4px;
+}
+.conn-field { display: flex; flex-direction: column; gap: 6px; }
+.conn-field > span { font-size: 0.74rem; color: var(--muted); }
+.conn-row { display: flex; align-items: center; gap: 8px; }
+.conn-row > span { color: var(--muted); }
+.conn-sample { width: 100%; min-height: 160px; resize: vertical; }
+.conn-verdict { padding: 16px 18px; margin-top: 12px; border-left: 3px solid var(--muted); }
+.conn-verdict.is-govern { border-left-color: var(--band-solo); }
+.conn-verdict.is-govern strong { color: var(--band-solo); }
+.conn-verdict.is-observe { border-left-color: var(--band-copilot); }
+.conn-verdict.is-observe strong { color: color-mix(in srgb, var(--band-copilot) 70%, var(--muted)); }
 .quickstart {
   background: #0f1623;
   color: #d7e0ee;
