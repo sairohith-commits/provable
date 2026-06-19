@@ -47,6 +47,7 @@ export const TRANSITION_STATUSES = [
   'APPLIED',
   'AUTO_APPLIED',
   'REJECTED',
+  'SUPERSEDED',
 ] as const;
 export type TransitionStatus = (typeof TRANSITION_STATUSES)[number];
 

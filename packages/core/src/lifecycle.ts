@@ -220,11 +220,28 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
   // to the current implied rank on every SCORED recompute (steps 6/7 + observing exit).
   const baseline = state.lastImpliedRank;
 
+  // A safety/override event that lands while a promotion is in flight SUPERSEDES that pending
+  // (a terminal, audited record) so the read-model never treats a stale pending as live.
+  const supersedePending = (): void => {
+    if (state.pendingPromotion) {
+      transitions.push(
+        mk(
+          state.pendingPromotion.toMode,
+          'PROMOTION',
+          'SCORE_CROSS',
+          'SUPERSEDED',
+          `promotion to ${state.pendingPromotion.toMode} superseded by a later transition`,
+        ),
+      );
+    }
+  };
+
   // 1) Guardrail — instant AUTO_APPLIED suspension, grace 0 (highest precedence).
   if (signals.guardrail) {
     if (mode === 'SUSPENDED') {
       return { transitions, state: mkState('SUSPENDED', 0, 0, undefined, 0, baseline), effectiveMode: 'SUSPENDED' };
     }
+    supersedePending();
     transitions.push(
       mk(
         'SUSPENDED',
@@ -240,6 +257,7 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
   // 2) Drift — instant AUTO_APPLIED demotion, grace 0. Applies to manually-set agents too.
   if (signals.drift && isOperating(mode)) {
     const target = oneBandDown(mode);
+    supersedePending();
     transitions.push(
       mk(target, 'DEMOTION', 'DRIFT', 'AUTO_APPLIED', `drift detected: ${signals.drift.reason}`),
     );
@@ -316,6 +334,7 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
       const nextInsufficient = state.consecutiveInsufficient + 1;
       if (nextInsufficient >= policy.signalLossGraceRecomputes) {
         const target = oneBandDown(mode);
+        supersedePending();
         transitions.push(
           mk(
             target,
@@ -357,6 +376,7 @@ export function stepLifecycle(input: LifecycleStepInput): LifecycleStepResult {
     const nextSubFloor = state.consecutiveSubFloor + 1;
     if (nextSubFloor >= policy.scoreDropConfirmRecomputes) {
       const target = oneBandDown(mode);
+      supersedePending();
       transitions.push(
         mk(
           target,
@@ -489,9 +509,25 @@ export function manualOverride(input: ManualOverrideInput): LifecycleStepResult 
   );
 
   // effectiveMode set immediately; score untouched (baseline preserved); counters reset; any
-  // pending promotion is superseded by the human's direct decision.
+  // pending promotion is SUPERSEDED (terminal, audited) by the human's direct decision.
+  const transitions: Transition[] = [];
+  if (state.pendingPromotion) {
+    transitions.push(
+      makeTransition(
+        ids,
+        from,
+        state.pendingPromotion.toMode,
+        'PROMOTION',
+        'SCORE_CROSS',
+        'SUPERSEDED',
+        `promotion to ${state.pendingPromotion.toMode} superseded by manual override`,
+        asOf,
+      ),
+    );
+  }
+  transitions.push(transition);
   const next = mkState(target, 0, 0, undefined, 0, state.lastImpliedRank);
-  return { transitions: [transition], state: next, effectiveMode: target };
+  return { transitions, state: next, effectiveMode: target };
 }
 
 /** Fold a sequence of recomputes through the engine (pure convenience for tests/consumers). */

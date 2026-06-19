@@ -79,6 +79,7 @@ enum TransitionStatus {
   APPLIED
   AUTO_APPLIED
   REJECTED
+  SUPERSEDED
 }
 
 enum ScoreStatus {

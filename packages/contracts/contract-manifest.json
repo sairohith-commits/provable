@@ -50,6 +50,7 @@
     "PENDING_APPROVAL",
     "APPLIED",
     "AUTO_APPLIED",
-    "REJECTED"
+    "REJECTED",
+    "SUPERSEDED"
   ]
 }

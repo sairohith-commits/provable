@@ -85,6 +85,7 @@ describe('as-const arrays stay in lockstep with their derived unions', () => {
       'APPLIED',
       'AUTO_APPLIED',
       'REJECTED',
+      'SUPERSEDED',
     ]);
   });
 });

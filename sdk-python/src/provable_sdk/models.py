@@ -75,6 +75,7 @@ class TransitionStatus(StrEnum):
     APPLIED = "APPLIED"
     AUTO_APPLIED = "AUTO_APPLIED"
     REJECTED = "REJECTED"
+    SUPERSEDED = "SUPERSEDED"
 
 
 # ── Base configs ─────────────────────────────────────────────────────────────

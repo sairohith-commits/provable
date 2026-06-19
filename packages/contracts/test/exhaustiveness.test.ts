@@ -118,6 +118,8 @@ function describeStatus(s: TransitionStatus): string {
       return 'auto_applied';
     case 'REJECTED':
       return 'rejected';
+    case 'SUPERSEDED':
+      return 'superseded';
     default:
       return assertNever(s);
   }

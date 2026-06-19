@@ -16,6 +16,7 @@ import {
 } from '@provable/persistence';
 import { generateApiKey } from './auth.js';
 import { registerConnector } from './connector.js';
+import { buildFleetOverview } from './fleet.js';
 import { registerGateway } from './gateway.js';
 import {
   deriveDisplayStatus,
@@ -290,16 +291,19 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     const orgId = await requireReadOrg(req, reply);
     if (orgId === null) return;
     const asOf = new Date().toISOString();
-    const { registry, cost, safety, pendingApprovals, apiKeyPrefix } = await withTenant(
+    const { registry, cost, safety, fleet, apiKeyPrefix } = await withTenant(
       orgId,
       async (tx) => ({
         registry: await readModelRepo.registry(tx),
         cost: await readModelRepo.cost(tx),
         safety: await readModelRepo.safety(tx),
-        pendingApprovals: await readModelRepo.pendingApprovalCount(tx),
+        // KPIs derive from the SAME fleet views as /overview/fleet — no independent counter that
+        // could double-count. pendingApprovals == promotableNow (a live, actionable promotion).
+        fleet: await buildFleetOverview(tx, orgId),
         apiKeyPrefix: await readModelRepo.apiKeyPrefix(tx, orgId),
       }),
     );
+    const pendingApprovals = fleet.kpis.promotableNow;
     const activeAgents = registry.agents.filter(
       (a) => deriveIdentityState(a, asOf) === 'ACTIVE',
     ).length;
@@ -319,7 +323,16 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
       hasCostSignal: cost.org.hasCostSignal,
       roi,
       apiKeyPrefix,
+      fleetKpis: fleet.kpis,
     });
+  });
+
+  // ── Fleet governance read-model (Phase U1): one derived status per task + reconciled KPIs ──
+  app.get('/overview/fleet', async (req, reply) => {
+    const orgId = await requireReadOrg(req, reply);
+    if (orgId === null) return;
+    const fleet = await withTenant(orgId, (tx) => buildFleetOverview(tx, orgId));
+    return reply.send(fleet);
   });
 
   // ── Connect-page ROTATE (single-active-key semantics, on the multi-key table) ────────
