@@ -1,4 +1,4 @@
-import { GATEWAY_BASE_PATH, GATEWAY_HEADERS } from '@provable/contracts';
+import { ANTHROPIC_GW_PREFIX, GATEWAY_BASE_PATH, GATEWAY_HEADERS } from '@provable/contracts';
 
 /**
  * Tier 1 — Gateway recipe (zero code) → Observe-only: cost + activity, readiness N/A until
@@ -36,6 +36,35 @@ client = OpenAI(
     },
 )
 # Readiness stays N/A (Observe-only) until you add verdicts (Tier 3 SDK / Tier 2 adapter).`;
+}
+
+/**
+ * Tier 1 — Anthropic gateway recipe (Phase O2, zero code) → Observe-only: cost + activity. A
+ * per-agent gateway key identifies the agent×task FROM THE URL PATH, so the agent just repoints
+ * its Anthropic base_url and keeps using its OWN Anthropic key (Provable forwards it upstream and
+ * never stores it). Bound to ANTHROPIC_GW_PREFIX so the recipe and the proxy can't drift.
+ */
+export function anthropicGatewayRecipe(apiUrl: string, gatewayKey: string): string {
+  const base = `${apiUrl}${ANTHROPIC_GW_PREFIX}/${gatewayKey}`;
+  return `# Tier 1 - Anthropic gateway (zero code) -> Observe-only: real USD cost + activity.
+# Repoint base_url to Provable; KEEP using your own Anthropic key (Provable never stores it).
+
+curl ${base}/v1/messages \\
+  -H "x-api-key: $ANTHROPIC_API_KEY" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "content-type: application/json" \\
+  -d '{"model":"claude-sonnet-4-6","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'
+
+# Anthropic Python SDK:
+from anthropic import Anthropic
+client = Anthropic(
+    base_url="${base}",          # per-agent gateway key is IN the URL
+    api_key="$ANTHROPIC_API_KEY",  # your OWN key - Provable forwards it, never stores it
+)
+client.messages.create(model="claude-sonnet-4-6", max_tokens=256,
+    messages=[{"role": "user", "content": "hi"}])
+# Streaming works unchanged (SSE is proxied in real time). Readiness stays N/A (Observe-only):
+# governance needs verdicts, so a gateway agent is never promotable - add Tier 3 SDK for that.`;
 }
 
 /**

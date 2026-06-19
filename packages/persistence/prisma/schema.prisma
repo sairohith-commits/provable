@@ -95,6 +95,14 @@ enum Role {
   VIEWER
 }
 
+// API key kind (Phase O2). SDK = the org-scoped machine key (/track, /register, connector,
+// reads). GATEWAY = a per-agent Tier-1 gateway key (bound to agentKey+taskKey) used ONLY in the
+// /gw/<key> proxy path. The two resolvers are distinct, so a key of one kind can't act as the other.
+enum ApiKeyKind {
+  SDK
+  GATEWAY
+}
+
 // ── Entities ───────────────────────────────────────────────────────────────────
 model Org {
   id           String  @id // OrgId (tenant)
@@ -126,7 +134,9 @@ model ApiKey {
   prefix    String    @unique // lookup handle (the secret is never stored)
   hash      String // sha256 of the full key
   label     String? // optional human label
-  agentKey  String? // room for per-agent keys later; C1 keys are org-scoped (always null)
+  kind      ApiKeyKind @default(SDK) // SDK (org machine key) | GATEWAY (per-agent Tier-1 proxy key)
+  agentKey  String? // GATEWAY keys bind an agent; SDK (org-scoped) keys leave it null
+  taskKey   String? // GATEWAY keys carry a default task; SDK keys leave it null
   createdAt DateTime  @default(now())
   revokedAt DateTime?
 

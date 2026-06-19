@@ -43,12 +43,12 @@ describe('GET /overview/fleet — derived status + actionAvailable', () => {
     expect(row.score).not.toBeNull();
   });
 
-  it('unscored (registered, no resolved signal) → DEGRADED, action=false', async () => {
+  it('observe-only (registered, no resolved signal) → OBSERVING, action=false, score null (Phase O2)', async () => {
     const key = await provision('org_unscored');
     await register(app, key, { agentKey: 'fresh', taskKey: 'classify' });
     const row = find(await fleet('org_unscored'), 'fresh', 'classify');
-    expect(row.status).toBe('DEGRADED');
-    expect(row.actionAvailable).toBe(false);
+    expect(row.status).toBe('OBSERVING'); // never-scored observe-only is OBSERVING, not DEGRADED
+    expect(row.actionAvailable).toBe(false); // not promotable; no approve affordance
     expect(row.score).toBeNull();
   });
 
@@ -79,14 +79,15 @@ describe('KPI reconciliation — counts derive from the same views (cannot diver
   it('promotableNow + needsAttention + tasksGoverned equal the row-derived counts', async () => {
     const key = await provision('org_kpi');
     await climbToPending(app, key, 'promo', 'classify'); // → PROMOTABLE
-    await register(app, key, { agentKey: 'idle', taskKey: 'classify' }); // unscored → DEGRADED
+    await register(app, key, { agentKey: 'idle', taskKey: 'classify' }); // observe-only → OBSERVING
     const f = await fleet('org_kpi');
     expect(f.kpis.tasksGoverned).toBe(f.tasks.length);
     expect(f.kpis.promotableNow).toBe(f.tasks.filter((t) => t.status === 'PROMOTABLE').length);
     expect(f.kpis.needsAttention).toBe(f.tasks.filter((t) => t.status === 'DEGRADED' || t.status === 'SUSPENDED').length);
-    // sanity on this fixture
+    // sanity on this fixture: OBSERVING is NOT "needs attention"
     expect(f.kpis.promotableNow).toBe(1);
-    expect(f.kpis.needsAttention).toBe(1);
+    expect(f.kpis.needsAttention).toBe(0);
+    expect(f.tasks.filter((t) => t.status === 'OBSERVING')).toHaveLength(1);
   });
 });
 

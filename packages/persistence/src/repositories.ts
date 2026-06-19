@@ -128,12 +128,15 @@ export const agentRepo = {
 export interface ApiKeyRow {
   prefix: string;
   label: string | null;
+  kind: 'SDK' | 'GATEWAY';
+  agentKey: string | null;
+  taskKey: string | null;
   createdAt: string;
   revokedAt: string | null;
 }
 
 export const apiKeyRepo = {
-  /** Mint an org-scoped key row (the plaintext is shown once by the caller; never stored). */
+  /** Mint an org-scoped SDK key row (the plaintext is shown once by the caller; never stored). */
   async mint(
     tx: TenantClient,
     orgId: OrgId,
@@ -142,7 +145,25 @@ export const apiKeyRepo = {
     label?: string,
   ): Promise<void> {
     await tx.apiKey.create({
-      data: { orgId, prefix, hash, ...(label !== undefined ? { label } : {}) },
+      data: { orgId, prefix, hash, kind: 'SDK', ...(label !== undefined ? { label } : {}) },
+    });
+  },
+
+  /**
+   * Mint a per-agent GATEWAY key (Phase O2) bound to agentKey + a default taskKey. Distinct kind
+   * from the SDK machine key — resolved only by the gateway proxy, never honored on /track etc.
+   */
+  async mintGateway(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: string,
+    taskKey: string,
+    prefix: string,
+    hash: string,
+    label?: string,
+  ): Promise<void> {
+    await tx.apiKey.create({
+      data: { orgId, prefix, hash, kind: 'GATEWAY', agentKey, taskKey, ...(label !== undefined ? { label } : {}) },
     });
   },
 
@@ -155,6 +176,9 @@ export const apiKeyRepo = {
     return rows.map((k) => ({
       prefix: k.prefix,
       label: k.label,
+      kind: k.kind,
+      agentKey: k.agentKey,
+      taskKey: k.taskKey,
       createdAt: k.createdAt.toISOString(),
       revokedAt: k.revokedAt === null ? null : k.revokedAt.toISOString(),
     }));

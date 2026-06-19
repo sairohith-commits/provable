@@ -4,8 +4,8 @@ import type { AutonomyMode, GovernanceStatus, TaskGovernanceView } from '@provab
 // ONLY how a TaskGovernanceView renders. Node-testable (web vitest is node env); the components
 // render their output verbatim. Imports only @provable/contracts types (web-only-contracts).
 
-export type ChipTone = 'info' | 'neutral' | 'muted' | 'warning' | 'danger';
-export type ChipIcon = 'arrow-up' | 'hand-stop' | 'check' | 'alert-triangle' | 'ban';
+export type ChipTone = 'info' | 'neutral' | 'muted' | 'observe' | 'warning' | 'danger';
+export type ChipIcon = 'arrow-up' | 'hand-stop' | 'check' | 'eye' | 'alert-triangle' | 'ban';
 
 export interface ChipSpec {
   readonly tone: ChipTone;
@@ -18,6 +18,7 @@ export const CHIP_SPEC: Record<GovernanceStatus, ChipSpec> = {
   PROMOTABLE: { tone: 'info', icon: 'arrow-up' },
   HELD: { tone: 'neutral', icon: 'hand-stop' },
   AT_LEVEL: { tone: 'muted', icon: 'check' },
+  OBSERVING: { tone: 'observe', icon: 'eye' }, // informational; no action affordance
   DEGRADED: { tone: 'warning', icon: 'alert-triangle' },
   SUSPENDED: { tone: 'danger', icon: 'ban' },
 };
@@ -51,6 +52,8 @@ export function chipLabel(task: TaskGovernanceView): string {
       return `held at ${bandLabel(task.effectiveMode)} · manual`;
     case 'AT_LEVEL':
       return 'at level';
+    case 'OBSERVING':
+      return 'observe-only';
     case 'DEGRADED':
       return task.score === null ? 'unscored' : 'signal lost · demoted';
     case 'SUSPENDED':
@@ -131,11 +134,12 @@ export function ladderGeometry(
 
 // ── Grouping by agent ───────────────────────────────────────────────────────────
 const SEVERITY: Record<GovernanceStatus, number> = {
-  SUSPENDED: 5,
-  DEGRADED: 4,
-  HELD: 3,
-  PROMOTABLE: 2,
-  AT_LEVEL: 1,
+  SUSPENDED: 6,
+  DEGRADED: 5,
+  HELD: 4,
+  PROMOTABLE: 3,
+  AT_LEVEL: 2,
+  OBSERVING: 1, // benign/informational — sorts below everything actionable
 };
 
 export interface AgentGroup {
@@ -154,7 +158,12 @@ export function groupByAgent(tasks: readonly TaskGovernanceView[]): AgentGroup[]
   }
   const groups: AgentGroup[] = [];
   for (const [agentKey, list] of byAgent) {
-    const worst = list.reduce<GovernanceStatus>((w, t) => (SEVERITY[t.status] > SEVERITY[w] ? t.status : w), 'AT_LEVEL');
+    // Seed with the first task's status (a group always has ≥1) so an all-OBSERVING agent
+    // resolves to OBSERVING, not the old AT_LEVEL floor.
+    const worst = list.reduce<GovernanceStatus>(
+      (w, t) => (SEVERITY[t.status] > SEVERITY[w] ? t.status : w),
+      list[0]!.status,
+    );
     groups.push({ agentKey, tasks: list, worst, count: list.length });
   }
   // Most urgent agent first; stable by agentKey.

@@ -27,7 +27,8 @@ export { mapDecision, mapTransition, mapVerdictEvent, mapScore } from './mappers
 export type { ScoreRecord } from './mappers.js';
 export { makeRecomputePorts } from './recompute-ports.js';
 export type { RecomputePorts } from './recompute-ports.js';
-export { resolveOrgByApiKey, resolveOrgByClerkOrgId } from './auth.js';
+export { resolveOrgByApiKey, resolveOrgByClerkOrgId, resolveGatewayByApiKey } from './auth.js';
+export type { GatewayKeyResolution } from './auth.js';
 export {
   assertRlsScopedConnection,
   checkRlsScopedConnection,

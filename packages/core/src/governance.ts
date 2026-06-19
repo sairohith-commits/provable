@@ -8,10 +8,15 @@ import type { AutonomyMode, GovernanceStatus } from '@provable/contracts';
  *
  * Precedence (FIRST match wins):
  *   (a) SUSPENDED  — effectiveMode is SUSPENDED. Beats any score.
- *   (b) DEGRADED   — unscored, OR the latest transition is an AUTO_APPLIED signal-loss/drift demotion.
- *   (c) HELD       — manually overridden BELOW the earned band (rank(effective) < rank(implied)).
- *   (d) PROMOTABLE — scored, rank(implied) > rank(effective), a LIVE promotion exists.
- *   (e) AT_LEVEL   — everything else (rank-equal, or above-without-a-live-promotion).
+ *   (b) OBSERVING  — observe-only: effectiveMode OBSERVING and NOT a fresh signal-loss/drift
+ *                    auto-demotion. Cost/activity flow but no verdicts → readiness N/A, not
+ *                    promotable. Informational, NOT "needs attention".
+ *   (c) DEGRADED   — a GOVERNED-mode task that lost signal / auto-demoted, OR an unscored governed
+ *                    task. (A signal-loss demotion can land IN OBSERVING mode — it is caught here,
+ *                    not (b), because the latest transition is the auto-demotion.)
+ *   (d) HELD       — manually overridden BELOW the earned band (rank(effective) < rank(implied)).
+ *   (e) PROMOTABLE — scored, rank(implied) > rank(effective), a LIVE promotion exists.
+ *   (f) AT_LEVEL   — everything else (rank-equal, or above-without-a-live-promotion).
  */
 
 const RANK: Readonly<Record<AutonomyMode, number>> = {
@@ -54,7 +59,19 @@ export function deriveGovernanceStatus(i: GovernanceDerivationInput): Governance
     return { status: 'SUSPENDED', headroomTo: null, actionAvailable: false, reasonNote: note(i.reasonNote, 'suspended') };
   }
 
-  // (b) DEGRADED — unscored, or a fresh signal-loss/drift auto-demotion.
+  // (b) OBSERVING — genuine observe-only (no verdict channel). Excludes a governed task that just
+  //     signal-loss/drift auto-demoted INTO observing (that is DEGRADED, caught next).
+  if (i.effectiveMode === 'OBSERVING' && !i.latestIsAutoDemotionSignalLossOrDrift) {
+    return {
+      status: 'OBSERVING',
+      headroomTo: null,
+      actionAvailable: false,
+      reasonNote: note(i.reasonNote, 'observe-only — connect verdicts to govern'),
+    };
+  }
+
+  // (c) DEGRADED — a governed-mode task that lost signal / auto-demoted, or an unscored governed
+  //     task. Observe-only/never-scored agents are caught by (b) above and never reach here.
   if (!i.scored || i.latestIsAutoDemotionSignalLossOrDrift) {
     const fallback = i.scored ? 'auto-demoted (signal loss or drift)' : 'insufficient signal to score';
     return { status: 'DEGRADED', headroomTo: null, actionAvailable: false, reasonNote: note(i.reasonNote, fallback) };
