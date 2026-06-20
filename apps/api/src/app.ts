@@ -1,10 +1,20 @@
-import type { AgentIdentityState, AgentKey, OrgId, Permission, Role, TaskKey } from '@provable/contracts';
-import { ROLES, can } from '@provable/contracts';
+import type {
+  AgentIdentityState,
+  AgentKey,
+  OrgId,
+  Outcome,
+  Permission,
+  Role,
+  TaskKey,
+  VerdictKind,
+} from '@provable/contracts';
+import { OUTCOMES, ROLES, VERDICT_KINDS, can } from '@provable/contracts';
 import { DEFAULT_GOVERNANCE_POLICY, computeReadiness, manualOverride, stepLifecycle, transitionIdentity } from '@provable/core';
 import type { IdentityEvent, TaskScope } from '@provable/core';
 import {
   agentRepo,
   apiKeyRepo,
+  guardrailRuleRepo,
   makeRecomputePorts,
   membershipRepo,
   readModelRepo,
@@ -728,6 +738,70 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     const revoked = await withTenant(auth.ctx.orgId, (tx) => apiKeyRepo.revoke(tx, auth.ctx.orgId, prefix));
     if (revoked === 0) return reply.code(404).send({ error: 'no active key with that prefix' });
     return reply.send({ ok: true });
+  });
+
+  // ── Phase W4 — platform guardrail rules (role-gated: configure_guardrails). The org is the
+  //    VERIFIED caller's, never the payload. Rules are evaluated at ingestion (see recompute). ──
+  app.get('/admin/guardrail-rules', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'configure_guardrails');
+    if (auth === null) return;
+    const rules = await withTenant(auth.ctx.orgId, (tx) => guardrailRuleRepo.list(tx, auth.ctx.orgId));
+    return reply.send({ rules });
+  });
+
+  app.post('/admin/guardrail-rules', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'configure_guardrails');
+    if (auth === null) return;
+    const body = (req.body ?? {}) as {
+      agentKey?: string;
+      taskKey?: string;
+      verdict?: string;
+      outcome?: string;
+      guardrailId?: string;
+      reasonTemplate?: string;
+    };
+    if (typeof body.guardrailId !== 'string' || body.guardrailId.length === 0) {
+      return reply.code(400).send({ error: 'guardrailId is required' });
+    }
+    if (typeof body.reasonTemplate !== 'string' || body.reasonTemplate.length === 0) {
+      return reply.code(400).send({ error: 'reasonTemplate is required' });
+    }
+    const verdict = body.verdict;
+    const outcome = body.outcome;
+    if (verdict !== undefined && !(VERDICT_KINDS as readonly string[]).includes(verdict)) {
+      return reply.code(400).send({ error: 'invalid verdict' });
+    }
+    if (outcome !== undefined && !(OUTCOMES as readonly string[]).includes(outcome)) {
+      return reply.code(400).send({ error: 'invalid outcome' });
+    }
+    // A rule must constrain SOMETHING — verdict and/or outcome (else it would match everything).
+    if (verdict === undefined && outcome === undefined) {
+      return reply.code(400).send({ error: 'a rule needs a verdict and/or outcome condition' });
+    }
+    const rule = await withTenant(auth.ctx.orgId, (tx) =>
+      guardrailRuleRepo.create(tx, auth.ctx.orgId, {
+        guardrailId: body.guardrailId as string,
+        reasonTemplate: body.reasonTemplate as string,
+        ...(typeof body.agentKey === 'string' && body.agentKey.length > 0 ? { agentKey: body.agentKey } : {}),
+        ...(typeof body.taskKey === 'string' && body.taskKey.length > 0 ? { taskKey: body.taskKey } : {}),
+        ...(verdict !== undefined ? { verdict: verdict as VerdictKind } : {}),
+        ...(outcome !== undefined ? { outcome: outcome as Outcome } : {}),
+      }),
+    );
+    return reply.send({ rule });
+  });
+
+  app.post('/admin/guardrail-rules/:id/enabled', async (req, reply) => {
+    const auth = await requireInternalPermission(req, reply, 'configure_guardrails');
+    if (auth === null) return;
+    const { id } = req.params as { id: string };
+    const { enabled } = (req.body ?? {}) as { enabled?: boolean };
+    if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (boolean) is required' });
+    const rule = await withTenant(auth.ctx.orgId, (tx) =>
+      guardrailRuleRepo.setEnabled(tx, auth.ctx.orgId, id, enabled),
+    );
+    if (rule === null) return reply.code(404).send({ error: 'no such rule' });
+    return reply.send({ rule });
   });
 
   return app;

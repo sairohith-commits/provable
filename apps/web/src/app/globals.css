@@ -930,3 +930,19 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 }
 
 .wiz-nav { display: flex; justify-content: space-between; gap: 12px; }
+
+/* ── Phase W4 — Safety pillar: guardrail rule editor + incident source ──────────── */
+.rule-form { display: flex; flex-direction: column; gap: 10px; padding: 18px; margin: 6px 0 10px; max-width: 64ch; }
+.rule-form .row { display: flex; gap: 10px; }
+.rule-form .row > * { flex: 1; }
+.rule-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.rule-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+.rule-row.disabled { opacity: 0.55; }
+.rule-row .rule-id { font-family: var(--font-mono); font-size: 0.82rem; color: var(--ink); }
+.rule-row .rule-cond { color: var(--muted); font-size: 0.82rem; flex: 1; }
+.rule-state { font-size: 0.72rem; padding: 3px 9px; border-radius: 999px; font-family: var(--font-mono); }
+.rule-state.on { color: var(--band-solo); background: color-mix(in srgb, var(--band-solo) 14%, white); }
+.rule-state.off { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, white); }
+.t-source { font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; font-family: var(--font-mono); }
+.t-source.src-platform { color: var(--band-shadow); background: color-mix(in srgb, var(--band-shadow) 16%, white); }
+.t-source.src-agent { color: var(--band-copilot); background: color-mix(in srgb, var(--band-copilot) 12%, white); }

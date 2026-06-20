@@ -12,10 +12,13 @@ import type { OrgId } from '@provable/contracts';
 import {
   DEFAULT_GOVERNANCE_POLICY,
   computeReadiness,
+  evaluateGuardrails,
   stepLifecycle,
 } from '@provable/core';
 import type {
+  DecisionRule,
   DriftSignal,
+  EvaluableDecision,
   GuardrailTrip,
   LifecycleSignals,
   ManualDecision,
@@ -25,12 +28,33 @@ import type {
 import {
   agentRepo,
   decisionRepo,
+  guardrailRuleRepo,
   makeRecomputePorts,
   taskRepo,
   verdictEventRepo,
   withTenant,
 } from '@provable/persistence';
+import type { GuardrailRuleRow } from '@provable/persistence';
 import type { TrackBody } from './schemas.js';
+
+/**
+ * The actor stamped on a PLATFORM-detected guardrail trip's Transition, so the audit can tell who
+ * caught it: "policy" (Provable evaluated an org rule) vs an agent-reported trip (no actor). An
+ * agent never sets this — it comes only from the ingestion-side rule evaluation below.
+ */
+const PLATFORM_ACTOR = 'policy';
+
+/** Map a stored guardrail rule row → the generic, domain-agnostic rule core evaluates. */
+function toDecisionRule(r: GuardrailRuleRow): DecisionRule {
+  return {
+    id: r.guardrailId,
+    reason: r.reasonTemplate,
+    ...(r.agentKey !== null ? { agentKey: r.agentKey as AgentKey } : {}),
+    ...(r.taskKey !== null ? { taskKey: r.taskKey as TaskKey } : {}),
+    ...(r.verdict !== null ? { verdict: r.verdict } : {}),
+    ...(r.outcome !== null ? { outcome: r.outcome } : {}),
+  };
+}
 
 export interface RecomputeResult {
   readonly score: ReadinessResult;
@@ -111,6 +135,8 @@ export function recompute(
 
     let scope: TaskScope;
     let novel: boolean;
+    // The single decision this ingest affects, reduced to the generic fields guardrail rules read.
+    let evalDecision: EvaluableDecision | null = null;
 
     if (body.type === 'decision') {
       scope = { orgId, agentKey: body.agentKey as AgentKey, taskKey: body.taskKey as TaskKey };
@@ -135,6 +161,12 @@ export function recompute(
         ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
       });
       novel = created.created;
+      evalDecision = {
+        agentKey: scope.agentKey,
+        taskKey: scope.taskKey,
+        verdict: body.verdict ? toVerdict(body.verdict).kind : 'PENDING',
+        ...(body.outcome !== undefined ? { outcome: body.outcome as Outcome } : {}),
+      };
     } else {
       const existing = await decisionRepo.findByExternalRef(tx, orgId, body.externalRef as ExternalRef);
       if (existing === null) return { notFound: true };
@@ -148,6 +180,14 @@ export function recompute(
         ...(body.outcome !== undefined ? { outcome: body.outcome as Outcome } : {}),
       });
       novel = applied.appended;
+      if (applied.decision !== null) {
+        evalDecision = {
+          agentKey: applied.decision.agentKey,
+          taskKey: applied.decision.taskKey,
+          verdict: applied.decision.verdict.kind,
+          ...(applied.decision.outcome !== undefined ? { outcome: applied.decision.outcome } : {}),
+        };
+      }
     }
 
     // TEST-ONLY atomicity hook.
@@ -167,10 +207,37 @@ export function recompute(
     await ports.scores.write(scope, readiness, asOf);
     const state = await ports.lifecycle.read(scope);
     const stepInput = { ids: scope, state, readiness, policy: DEFAULT_GOVERNANCE_POLICY, asOf };
-    const step = stepLifecycle(signals === undefined ? stepInput : { ...stepInput, signals });
-    for (const t of step.transitions) await ports.transitions.append(t);
+
+    // ── Platform-enforced guardrails (W4). Provable evaluates the org's enabled rules against
+    //    THIS ingested decision and trips the guardrail ITSELF on a violation — reusing the exact
+    //    trip→SUSPENDED lifecycle an agent-reported signal triggers. Back-compat: skip when the
+    //    agent already reported a guardrail (its path is untouched). Idempotent: only novel
+    //    ingests reach here (replays returned above). Both SDK-track and connector decisions flow
+    //    through this same recompute, so both are evaluated.
+    let effectiveSignals = signals;
+    let platformDetected = false;
+    if (evalDecision !== null && (signals === undefined || signals.guardrail === undefined)) {
+      const rules = (await guardrailRuleRepo.listEnabled(tx, orgId)).map(toDecisionRule);
+      const match = evaluateGuardrails(evalDecision, rules);
+      if (match !== null) {
+        const guardrail: GuardrailTrip = { guardrailId: match.id, trippedAt: asOf, reason: match.reason };
+        effectiveSignals = { ...(signals ?? {}), guardrail };
+        platformDetected = true;
+      }
+    }
+
+    const step = stepLifecycle(
+      effectiveSignals === undefined ? stepInput : { ...stepInput, signals: effectiveSignals },
+    );
+    // Stamp the platform-detected trip so Legal can tell Provable caught it, not the agent.
+    const transitions = platformDetected
+      ? step.transitions.map((t) =>
+          t.trigger === 'GUARDRAIL' && t.actor === undefined ? { ...t, actor: PLATFORM_ACTOR } : t,
+        )
+      : step.transitions;
+    for (const t of transitions) await ports.transitions.append(t);
     await ports.lifecycle.write(scope, step.state);
 
-    return { score: readiness, effectiveMode: step.effectiveMode, transitions: [...step.transitions] };
+    return { score: readiness, effectiveMode: step.effectiveMode, transitions: [...transitions] };
   });
 }

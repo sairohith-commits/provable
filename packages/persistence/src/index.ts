@@ -17,6 +17,7 @@ export {
   apiKeyRepo,
   connectorConfigRepo,
   decisionRepo,
+  guardrailRuleRepo,
   orgRepo,
   scoreRepo,
   taskRepo,
@@ -30,6 +31,8 @@ export type {
   ConnectorCreateInput,
   ConnectorSourceSecret,
   DecisionCreateInput,
+  GuardrailRuleRow,
+  GuardrailRuleCreateInput,
   VerdictEventInput,
 } from './repositories.js';
 export { mapDecision, mapTransition, mapVerdictEvent, mapScore } from './mappers.js';

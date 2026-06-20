@@ -121,6 +121,7 @@ model Org {
   memberships   Membership[]
   apiKeys       ApiKey[]
   connectors    ConnectorConfig[]
+  guardrailRules GuardrailRule[]
 
   @@map("org")
 }
@@ -166,6 +167,30 @@ model ConnectorConfig {
 
   @@index([orgId])
   @@map("connector_config")
+}
+
+// Phase W4 — platform-enforced guardrail rule (per-org). Provable evaluates these against every
+// ingested decision and trips the guardrail ITSELF on a violation — independent of what the agent
+// reports. The condition is GENERIC over decision fields only (verdict and/or outcome match,
+// optionally scoped to an agentKey/taskKey) — no domain noun. `guardrailId` is the free-form audit
+// string written into the trip's Transition; `reasonTemplate` is the audited reason note.
+// Tenant-scoped by orgId (RLS). Disable via `enabled` (no delete).
+model GuardrailRule {
+  id             String   @id @default(uuid())
+  orgId          String
+  enabled        Boolean  @default(true)
+  agentKey       String? // null ⇒ any agent
+  taskKey        String? // null ⇒ any task
+  verdict        VerdictKind? // match when the decision's verdict equals this (null ⇒ ignore)
+  outcome        Outcome? // match when the decision's outcome equals this (null ⇒ ignore)
+  guardrailId    String // free-form audit id written into the trip transition
+  reasonTemplate String // audited reason note for a trip
+  createdAt      DateTime @default(now())
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("guardrail_rule")
 }
 
 // RBAC membership (Phase B) — who may do what in an org. Tenant-scoped by orgId (RLS).

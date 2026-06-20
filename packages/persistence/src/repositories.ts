@@ -9,6 +9,7 @@ import type {
   Source,
   Transition,
   Verdict,
+  VerdictKind,
 } from '@provable/contracts';
 import type { OrgId, TaskKey } from '@provable/contracts';
 import { mapDecision, mapScore, mapTransition, mapVerdictEvent } from './mappers.js';
@@ -306,6 +307,98 @@ export const connectorConfigRepo = {
       sourceAuthHeaderName: row.sourceAuthHeaderName,
       sourceAuthHeaderValueEnc: row.sourceAuthHeaderValueEnc,
     };
+  },
+};
+
+// ── Phase W4 — platform guardrail rules (per-org; RLS-isolated) ────────────────────────
+export interface GuardrailRuleRow {
+  id: string;
+  enabled: boolean;
+  agentKey: string | null;
+  taskKey: string | null;
+  verdict: VerdictKind | null;
+  outcome: Outcome | null;
+  guardrailId: string;
+  reasonTemplate: string;
+  createdAt: string;
+}
+
+export interface GuardrailRuleCreateInput {
+  agentKey?: string;
+  taskKey?: string;
+  verdict?: VerdictKind;
+  outcome?: Outcome;
+  guardrailId: string;
+  reasonTemplate: string;
+}
+
+function toGuardrailRuleRow(r: {
+  id: string;
+  enabled: boolean;
+  agentKey: string | null;
+  taskKey: string | null;
+  verdict: VerdictKind | null;
+  outcome: Outcome | null;
+  guardrailId: string;
+  reasonTemplate: string;
+  createdAt: Date;
+}): GuardrailRuleRow {
+  return {
+    id: r.id,
+    enabled: r.enabled,
+    agentKey: r.agentKey,
+    taskKey: r.taskKey,
+    verdict: r.verdict,
+    outcome: r.outcome,
+    guardrailId: r.guardrailId,
+    reasonTemplate: r.reasonTemplate,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+export const guardrailRuleRepo = {
+  /** Create a rule. orgId comes from the verified caller — never the payload. */
+  async create(tx: TenantClient, orgId: OrgId, input: GuardrailRuleCreateInput): Promise<GuardrailRuleRow> {
+    const row = await tx.guardrailRule.create({
+      data: {
+        orgId,
+        guardrailId: input.guardrailId,
+        reasonTemplate: input.reasonTemplate,
+        ...(input.agentKey !== undefined ? { agentKey: input.agentKey } : {}),
+        ...(input.taskKey !== undefined ? { taskKey: input.taskKey } : {}),
+        ...(input.verdict !== undefined ? { verdict: input.verdict } : {}),
+        ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
+      },
+    });
+    return toGuardrailRuleRow(row);
+  },
+
+  /** All rules for the org, newest first. */
+  async list(tx: TenantClient, orgId: OrgId): Promise<GuardrailRuleRow[]> {
+    const rows = await tx.guardrailRule.findMany({ where: { orgId }, orderBy: { createdAt: 'desc' } });
+    return rows.map(toGuardrailRuleRow);
+  },
+
+  /** Enabled rules only — the set evaluated at ingestion. */
+  async listEnabled(tx: TenantClient, orgId: OrgId): Promise<GuardrailRuleRow[]> {
+    const rows = await tx.guardrailRule.findMany({
+      where: { orgId, enabled: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(toGuardrailRuleRow);
+  },
+
+  /** Enable/disable a rule (no delete — disable via enabled). Returns null if not in the org. */
+  async setEnabled(
+    tx: TenantClient,
+    orgId: OrgId,
+    id: string,
+    enabled: boolean,
+  ): Promise<GuardrailRuleRow | null> {
+    const existing = await tx.guardrailRule.findFirst({ where: { id, orgId } });
+    if (existing === null) return null;
+    const row = await tx.guardrailRule.update({ where: { id }, data: { enabled } });
+    return toGuardrailRuleRow(row);
   },
 };
 

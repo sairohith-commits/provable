@@ -25,6 +25,7 @@ import {
   toggleFilter,
 } from '@/lib/fleet-view';
 import { relativeTime, shortSubject } from '@/lib/format';
+import { incidentSource, incidentSourceLabel } from '@/lib/guardrails-view';
 import { FleetRow } from './fleet-row';
 import { FreeSetPanel } from './free-set-panel';
 import { PillarShell } from './pillar-shell';
@@ -506,6 +507,14 @@ export function GuardrailsSection({ safety }: { safety: SafetyView }) {
                   {e.agentKey}·{e.taskKey}
                 </span>
                 <span className={`t-trigger trig-${e.trigger.toLowerCase()}`}>{e.trigger}</span>
+                {e.trigger === 'GUARDRAIL' ? (
+                  <span
+                    className={`t-source src-${incidentSource(e.actor)}`}
+                    data-incident-source={incidentSource(e.actor)}
+                  >
+                    {incidentSourceLabel(e.actor)}
+                  </span>
+                ) : null}
                 <span className="t-move">
                   {e.fromMode}→{e.toMode}
                 </span>

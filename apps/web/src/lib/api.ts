@@ -363,6 +363,66 @@ export async function revokeKey(
   return { ok: res.ok, status: res.status };
 }
 
+// ── Phase W4: platform guardrail rules (configure_guardrails, enforced API-side). The signed-in
+//    human's org + subject reach the internal endpoints; the org is the verified caller's. ──────
+export interface GuardrailRuleRow {
+  id: string;
+  enabled: boolean;
+  agentKey: string | null;
+  taskKey: string | null;
+  verdict: string | null;
+  outcome: string | null;
+  guardrailId: string;
+  reasonTemplate: string;
+  createdAt: string;
+}
+
+export async function listGuardrailRules(orgId: string, subject: string): Promise<GuardrailRuleRow[]> {
+  const res = await fetch(`${apiUrl}/admin/guardrail-rules`, {
+    headers: readHeaders(orgId, subject),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`GET /admin/guardrail-rules failed: ${res.status}`);
+  return ((await res.json()) as { rules: GuardrailRuleRow[] }).rules;
+}
+
+export async function createGuardrailRule(
+  orgId: string,
+  subject: string,
+  body: {
+    guardrailId: string;
+    reasonTemplate: string;
+    agentKey?: string;
+    taskKey?: string;
+    verdict?: string;
+    outcome?: string;
+  },
+): Promise<{ ok: boolean; status: number; rule?: GuardrailRuleRow }> {
+  const res = await fetch(`${apiUrl}/admin/guardrail-rules`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  return { ok: true, status: res.status, rule: ((await res.json()) as { rule: GuardrailRuleRow }).rule };
+}
+
+export async function setGuardrailRuleEnabled(
+  orgId: string,
+  subject: string,
+  id: string,
+  enabled: boolean,
+): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch(`${apiUrl}/admin/guardrail-rules/${encodeURIComponent(id)}/enabled`, {
+    method: 'POST',
+    headers: readHeaders(orgId, subject),
+    body: JSON.stringify({ enabled }),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status };
+}
+
 // ── Tier-2 connectors (Phase O3b) — internal-authed dashboard path. The web never holds the
 //    org's machine key; the API accepts the internal token (role-gated) for these too. ─────────
 export interface ConnectorRow {
