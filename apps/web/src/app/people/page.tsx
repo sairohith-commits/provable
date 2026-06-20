@@ -2,6 +2,7 @@ import { type Role, ROLES, can } from '@provable/contracts';
 import { revalidatePath } from 'next/cache';
 import { inviteMember, listMembers, removeMember, setMemberRole } from '@/lib/api';
 import { getAuthContext } from '@/lib/auth';
+import { PillarShell } from '@/components/pillar-shell';
 
 // Owner-only people management (Phase B in-app assignment). The API enforces manage_people on
 // every call; the page additionally gates the UI. role assignment is by email — the invite
@@ -55,7 +56,8 @@ export default async function PeoplePage() {
   const members = await listMembers(ctx.orgId, ctx.userId);
 
   return (
-    <div className="people">
+    <PillarShell role={ctx.role}>
+      <div className="people">
       <section className="pillar">
         <h2>People &amp; roles</h2>
         <form action={inviteAction} className="invite-form glass">
@@ -105,6 +107,7 @@ export default async function PeoplePage() {
           ))}
         </ul>
       </section>
-    </div>
+      </div>
+    </PillarShell>
   );
 }

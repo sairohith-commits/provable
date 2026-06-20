@@ -9,6 +9,7 @@ import {
 } from '@/lib/api';
 import { getAuthContext } from '@/lib/auth';
 import { AdminKeys } from '@/components/admin-keys';
+import { PillarShell } from '@/components/pillar-shell';
 
 // Admin agent management (Phase C1) — DISTINCT from the monitoring Overview. Provision, rename,
 // deactivate/reactivate, retire + org keys. Every control is gated by can() for UX; the API is
@@ -74,7 +75,8 @@ export default async function AdminAgentsPage() {
   ]);
 
   return (
-    <div className="admin-agents">
+    <PillarShell role={ctx.role}>
+      <div className="admin-agents">
       <section className="pillar">
         <h2>Agents</h2>
         {canAgents ? (
@@ -130,6 +132,7 @@ export default async function AdminAgentsPage() {
       </section>
 
       {canKeys ? <AdminKeys keys={keys} canManage={canKeys} /> : null}
-    </div>
+      </div>
+    </PillarShell>
   );
 }

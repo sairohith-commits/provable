@@ -2,6 +2,7 @@ import type { Role } from '@provable/contracts';
 import { getSummary, publicApiUrl } from '@/lib/api';
 import { getAuthState } from '@/lib/auth';
 import { ConnectClient } from '@/components/connect-client';
+import { PillarShell } from '@/components/pillar-shell';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,5 +37,9 @@ export default async function ConnectPage() {
       </div>
     );
   }
-  return <ConnectInner orgId={state.context.orgId} subject={state.context.userId} role={state.context.role} />;
+  return (
+    <PillarShell role={state.context.role}>
+      <ConnectInner orgId={state.context.orgId} subject={state.context.userId} role={state.context.role} />
+    </PillarShell>
+  );
 }
