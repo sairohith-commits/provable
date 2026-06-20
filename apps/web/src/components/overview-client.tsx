@@ -26,6 +26,7 @@ import {
 } from '@/lib/fleet-view';
 import { relativeTime, shortSubject } from '@/lib/format';
 import { incidentSource, incidentSourceLabel } from '@/lib/guardrails-view';
+import { EmptyState } from './empty-state';
 import { FleetRow } from './fleet-row';
 import { FreeSetPanel } from './free-set-panel';
 import { PillarShell } from './pillar-shell';
@@ -247,9 +248,12 @@ function ReadinessSection({
     <section className="pillar" data-section="readiness">
       <h2>{SECTION_TITLE.readiness}</h2>
       {groups.length === 0 ? (
-        <p className="empty" data-readiness-empty={filter ?? 'all'}>
-          {emptyCopy}
-        </p>
+        <EmptyState
+          icon="agents"
+          title={emptyCopy}
+          action={filter ? undefined : { href: '/connect', label: 'Connect an agent' }}
+          attrs={{ 'data-readiness-empty': filter ?? 'all' }}
+        />
       ) : (
         groups.map((group) => (
           <div className="fleet-group" key={group.agentKey} data-agent-group={group.agentKey}>
@@ -389,7 +393,11 @@ export function VisibilitySection({ rows }: { rows: VisibilityRow[] }) {
         </ul>
       ) : null}
       {rows.length === 0 ? (
-        <p className="empty">No agent activity yet.</p>
+        <EmptyState
+          icon="activity"
+          title="No agent activity yet."
+          action={{ href: '/connect', label: 'Connect an agent' }}
+        />
       ) : (
         <ul className="vis-list">
           {rows.map((r) => (
@@ -449,9 +457,12 @@ export function CostSection({ cost }: { cost: CostView }) {
           </div>
         </div>
       ) : (
-        <p className="cost-empty disclosure" data-cost-empty>
-          No cost signal reported yet — projection only.
-        </p>
+        <EmptyState
+          icon="cost"
+          title="No cost signal reported yet — the projection below is a forecast, not banked savings."
+          action={{ href: '/connect', label: 'Connect an agent' }}
+          attrs={{ 'data-cost-empty': 'true' }}
+        />
       )}
 
       {/* Shadow-counterfactual ROI — a PROJECTION, assumptions rendered on screen. */}
@@ -491,7 +502,10 @@ export function GuardrailsSection({ safety }: { safety: SafetyView }) {
     <section className="pillar" data-section="guardrails">
       <h2>{SECTION_TITLE.guardrails}</h2>
       {events.length === 0 && suspended.length === 0 ? (
-        <p className="empty">No guardrail trips or signal-loss events — all clear.</p>
+        <EmptyState
+          icon="safety-clear"
+          title="No guardrail trips or signal-loss events — all clear."
+        />
       ) : (
         <>
           {suspended.length > 0 ? (
@@ -542,7 +556,11 @@ export function RegistrySection({ agents }: { agents: RegistryAgentRow[] }) {
     <section className="pillar" data-section="registry">
       <h2>{SECTION_TITLE.registry}</h2>
       {agents.length === 0 ? (
-        <p className="empty">No agents discovered yet.</p>
+        <EmptyState
+          icon="registry"
+          title="No agents discovered yet."
+          action={{ href: '/connect', label: 'Connect an agent' }}
+        />
       ) : (
         <table className="registry">
           <thead>

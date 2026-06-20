@@ -3,6 +3,7 @@ import { publicApiUrl } from '@/lib/api';
 import { getAuthState } from '@/lib/auth';
 import { AuthGate } from '@/components/auth-gate';
 import { OnboardingWizardClient } from '@/components/onboarding-wizard-client';
+import { EmptyState } from '@/components/empty-state';
 import { PillarShell } from '@/components/pillar-shell';
 
 // Phase W1 — the in-dashboard "Add an agent" wizard. Same edge pattern as /connectors:
@@ -20,7 +21,7 @@ export default async function OnboardingPage() {
       {can(role, 'manage_agents') || can(role, 'manage_keys') ? (
         <OnboardingWizardClient apiUrl={publicApiUrl()} />
       ) : (
-        <div className="empty card glass">You don’t have access to onboarding.</div>
+        <EmptyState variant="gated" icon="no-access" title="You don’t have access to onboarding." />
       )}
     </PillarShell>
   );

@@ -35,9 +35,20 @@
 * {
   box-sizing: border-box;
 }
+/* Locked light-glass base: frosted-white cards over a PALE gradient mesh. The mesh is intentionally
+   low-contrast (band hues at ~8–10% over the pale fill) — depth for the glass to frost, not
+   decoration. Fixed so it doesn't scroll; the pale base keeps --ink text high-contrast on every
+   surface (populated, empty, and gated). */
 body {
   margin: 0;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(58rem 58rem at 12% -8%, color-mix(in srgb, var(--band-copilot) 10%, transparent), transparent 60%),
+    radial-gradient(52rem 52rem at 92% 2%, color-mix(in srgb, var(--band-solo) 9%, transparent), transparent 58%),
+    radial-gradient(48rem 48rem at 80% 98%, color-mix(in srgb, var(--band-shadow) 8%, transparent), transparent 60%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  min-height: 100vh;
   color: var(--ink);
   font-family: var(--font-sans);
 }
@@ -1115,4 +1126,75 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* ══ Phase 3 — shared empty/gate state + ladder micro-polish ══ */
+
+/* One first-impression surface: centered, one muted icon, one-line explainer, optional CTA.
+   Rendered INSIDE PillarShell on every route, so the shell never drops. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+}
+.empty-state-icon {
+  color: var(--muted);
+  opacity: 0.85;
+}
+.empty-state[data-empty-state='gated'] .empty-state-icon {
+  opacity: 0.7;
+}
+.empty-state-title {
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 48ch;
+}
+.empty-state-action {
+  min-height: var(--control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  margin-top: var(--space-1);
+  border-radius: var(--radius-control);
+  background: var(--band-copilot);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.empty-state-action:hover {
+  filter: brightness(0.96);
+}
+.empty-state-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--band-copilot) 60%, white);
+  outline-offset: 2px;
+}
+
+/* Readiness Ladder micro-polish — row lift on hover, crisper markers, subtly livelier zones.
+   Presentation only; geometry (ladderGeometry) is untouched. */
+.fleet-row {
+  transition: box-shadow 130ms ease, border-color 130ms ease;
+}
+.fleet-row:hover {
+  box-shadow: 0 6px 18px rgba(24, 32, 43, 0.09);
+  border-color: color-mix(in srgb, var(--band-copilot) 22%, var(--hairline));
+}
+.fleet-row:hover .ladder-zones:not(.dimmed) .zone {
+  filter: saturate(1.08);
+}
+.marker-effective {
+  filter: drop-shadow(0 1px 1px rgba(24, 32, 43, 0.25));
+}
+.lad-dot,
+.lad-ring {
+  transition: transform 130ms ease;
+}
+.fleet-row:hover .lad-dot {
+  transform: translateX(-50%) scale(1.12);
 }

@@ -3,6 +3,7 @@ import { publicApiUrl } from '@/lib/api';
 import { getAuthState } from '@/lib/auth';
 import { AuthGate } from '@/components/auth-gate';
 import { ConnectorsClient } from '@/components/connectors-client';
+import { EmptyState } from '@/components/empty-state';
 import { PillarShell } from '@/components/pillar-shell';
 
 // Connectors editor (Phase O3b). Authed page only — reuses the untouched getAuthState gate +
@@ -18,7 +19,7 @@ export default async function ConnectorsPage() {
       {can(role, 'manage_agents') ? (
         <ConnectorsClient apiUrl={publicApiUrl()} />
       ) : (
-        <div className="empty card glass">Only an Owner can manage connectors.</div>
+        <EmptyState variant="gated" icon="no-access" title="Only an Owner can manage connectors." />
       )}
     </PillarShell>
   );

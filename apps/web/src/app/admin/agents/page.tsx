@@ -9,6 +9,7 @@ import {
 } from '@/lib/api';
 import { getAuthContext } from '@/lib/auth';
 import { AdminKeys } from '@/components/admin-keys';
+import { EmptyState } from '@/components/empty-state';
 import { PillarShell } from '@/components/pillar-shell';
 
 // Admin agent management (Phase C1) — DISTINCT from the monitoring Overview. Provision, rename,
@@ -61,12 +62,22 @@ async function lifecycleAction(formData: FormData): Promise<void> {
 
 export default async function AdminAgentsPage() {
   const ctx = await getAuthContext();
-  if (ctx === null) return <div className="empty card glass">Sign in to manage agents.</div>;
+  if (ctx === null) {
+    return (
+      <PillarShell>
+        <EmptyState variant="gated" icon="signin" title="Sign in to manage agents." />
+      </PillarShell>
+    );
+  }
   const canAgents = can(ctx.role, 'manage_agents');
   const canActivate = can(ctx.role, 'activate_deactivate');
   const canKeys = can(ctx.role, 'manage_keys');
   if (!canAgents && !canActivate) {
-    return <div className="empty card glass">You don’t have access to agent management.</div>;
+    return (
+      <PillarShell role={ctx.role}>
+        <EmptyState variant="gated" icon="no-access" title="You don’t have access to agent management." />
+      </PillarShell>
+    );
   }
 
   const [agents, keys] = await Promise.all([
@@ -89,6 +100,13 @@ export default async function AdminAgentsPage() {
           </form>
         ) : null}
 
+        {agents.length === 0 ? (
+          <EmptyState
+            icon="agents"
+            title="No agents yet."
+            action={{ href: '/onboarding', label: 'Add an agent' }}
+          />
+        ) : (
         <ul className="agent-admin-list" data-agent-list>
           {agents.map((a) => {
             const terminal = a.displayStatus === 'RETIRED';
@@ -127,8 +145,8 @@ export default async function AdminAgentsPage() {
               </li>
             );
           })}
-          {agents.length === 0 ? <li className="empty">No agents yet.</li> : null}
         </ul>
+        )}
       </section>
 
       {canKeys ? <AdminKeys keys={keys} canManage={canKeys} /> : null}

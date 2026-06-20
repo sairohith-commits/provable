@@ -2,6 +2,7 @@ import { type Role, ROLES, can } from '@provable/contracts';
 import { revalidatePath } from 'next/cache';
 import { inviteMember, listMembers, removeMember, setMemberRole } from '@/lib/api';
 import { getAuthContext } from '@/lib/auth';
+import { EmptyState } from '@/components/empty-state';
 import { PillarShell } from '@/components/pillar-shell';
 
 // Owner-only people management (Phase B in-app assignment). The API enforces manage_people on
@@ -47,10 +48,18 @@ async function removeAction(formData: FormData): Promise<void> {
 export default async function PeoplePage() {
   const ctx = await getAuthContext();
   if (ctx === null) {
-    return <div className="empty card glass">Sign in to manage people.</div>;
+    return (
+      <PillarShell>
+        <EmptyState variant="gated" icon="signin" title="Sign in to manage people." />
+      </PillarShell>
+    );
   }
   if (!can(ctx.role, 'manage_people')) {
-    return <div className="empty card glass">Only an Owner can manage people.</div>;
+    return (
+      <PillarShell role={ctx.role}>
+        <EmptyState variant="gated" icon="no-access" title="Only an Owner can manage people." />
+      </PillarShell>
+    );
   }
 
   const members = await listMembers(ctx.orgId, ctx.userId);

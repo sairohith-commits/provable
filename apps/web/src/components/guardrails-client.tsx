@@ -12,6 +12,7 @@ import {
   ruleConditionSummary,
   ruleFormValid,
 } from '@/lib/guardrails-view';
+import { EmptyState } from './empty-state';
 
 // Phase W4 — Safety pillar: create + list PLATFORM guardrail rules. Provable evaluates these at
 // ingestion and trips the guardrail itself; the incidents feed (GuardrailsSection) then shows
@@ -165,7 +166,14 @@ export function GuardrailsClient({ role }: { role: Role }) {
       <section className="pillar">
         <h3>Active rules</h3>
         {rules.length === 0 ? (
-          <p className="empty">No guardrail rules yet.</p>
+          <EmptyState
+            icon="safety"
+            title={
+              canConfigure
+                ? 'No guardrail rules yet — define one with the form above.'
+                : 'No guardrail rules yet.'
+            }
+          />
         ) : (
           <ul className="rule-list" data-rule-list>
             {rules.map((r) => (

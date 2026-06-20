@@ -1,8 +1,11 @@
 import type { AuthState } from '@/lib/auth';
+import { EmptyState, type EmptyIcon } from './empty-state';
+import { PillarShell } from './pillar-shell';
 
-// The exact gate the pillar pages render for a non-authenticated state — mirrors page.tsx's
-// inline gate verbatim so EVERY route hits the same gate (page.tsx itself is left untouched per
-// the U3 hard constraint). Returns null when authenticated (the page renders its content).
+// The exact gate the pillar pages render for a non-authenticated state. Phase 3: it now renders
+// the shared EmptyState INSIDE PillarShell, so the sidebar+header shell persists in every gated
+// state — no route drops to a bare, shell-less card. Returns null when authenticated (the page
+// renders its content).
 export function gateMessage(state: AuthState): string | null {
   switch (state.status) {
     case 'signed-out':
@@ -16,7 +19,23 @@ export function gateMessage(state: AuthState): string | null {
   }
 }
 
+function gateIcon(state: AuthState): EmptyIcon {
+  switch (state.status) {
+    case 'no-org':
+      return 'no-org';
+    case 'no-access':
+      return 'no-access';
+    default:
+      return 'signin';
+  }
+}
+
 export function AuthGate({ state }: { state: AuthState }) {
   const msg = gateMessage(state);
-  return msg === null ? null : <div className="empty card glass">{msg}</div>;
+  if (msg === null) return null;
+  return (
+    <PillarShell>
+      <EmptyState variant="gated" icon={gateIcon(state)} title={msg} />
+    </PillarShell>
+  );
 }
