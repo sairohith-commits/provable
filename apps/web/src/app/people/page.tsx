@@ -61,8 +61,8 @@ export default async function PeoplePage() {
       <section className="pillar">
         <h2>People &amp; roles</h2>
         <form action={inviteAction} className="invite-form glass">
-          <input name="email" type="email" placeholder="person@example.com" required />
-          <select name="role" defaultValue="VIEWER">
+          <input className="field-input" name="email" type="email" placeholder="person@example.com" required />
+          <select className="field-input" name="role" defaultValue="VIEWER">
             {ROLES.map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -86,7 +86,7 @@ export default async function PeoplePage() {
               </span>
               <form action={setRoleAction} className="member-role-form">
                 <input type="hidden" name="email" value={m.email} />
-                <select name="role" defaultValue={m.role}>
+                <select className="field-input" name="role" defaultValue={m.role}>
                   {ROLES.map((r) => (
                     <option key={r} value={r}>
                       {r}

@@ -17,6 +17,19 @@
   --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Phase 2 — layout primitives. 8pt spacing scale, one content column, one card elevation. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --content-max: 1320px; /* sidebar + content column, centered on wide viewports */
+  --radius-card: 14px;
+  --radius-control: 10px;
+  --elevation-card: 0 1px 2px rgba(24, 32, 43, 0.05), 0 1px 1px rgba(24, 32, 43, 0.03);
+  --control-h: 38px;
 }
 
 * {
@@ -32,12 +45,15 @@ h1, h2, .brand {
   font-family: var(--font-display);
 }
 
-/* Frosted-white glass accent over a near-solid surface (dense data stays legible). */
+/* Frosted-white glass accent over a near-solid surface (dense data stays legible). The single
+   card primitive (Phase 2): one frosted fill, one hairline border, one radius, one subtle
+   elevation — every card reuses this; no per-card shadow/border one-offs. */
 .glass {
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(10px);
   border: 1px solid var(--hairline);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
 }
 
 .chrome {
@@ -45,7 +61,8 @@ h1, h2, .brand {
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  margin: 12px;
+  margin: 12px auto;
+  max-width: var(--content-max); /* header column aligns with the content column below */
 }
 .brand-sub {
   color: var(--muted);
@@ -83,13 +100,22 @@ main {
   border-color: var(--band-copilot);
 }
 
+/* Section rhythm locked to the 8pt grid (Phase 2): section heading → content → next section. */
 .pillar {
-  margin-bottom: 28px;
+  margin-bottom: var(--space-6);
 }
 .pillar h2 {
-  font-size: 1rem;
-  letter-spacing: 0.02em;
-  margin: 0 4px 10px;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0 0 var(--space-3);
+}
+.pillar h3 {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
 }
 
 .agent-list {
@@ -387,8 +413,10 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 .kpi-label { font-size: 0.78rem; color: var(--muted); }
 .kpi-sub { font-size: 0.72rem; color: var(--muted); font-family: var(--font-mono); }
 .kpi-attention { border-left: 3px solid var(--band-shadow); }
-.kpi-projection { border-left: 3px solid var(--band-solo); }
-.kpi-projection .kpi-value { color: var(--band-solo); }
+/* Accent restraint (Phase 2): the ROI projection is a forecast, not a banked metric — it carries
+   NO standing color accent. Overview's accent system is the readiness bands (ladder + mode chips)
+   plus the functional amber attention border; ROI green was decoration and is removed. The
+   "projection" label below the value keeps it honest. */
 
 /* U5: the Promotable / Needs-attention counters double as work-queue filters. The clickable
    card is a real <button>; reset its chrome to match the static cards, add affordance + selected. */
@@ -408,7 +436,7 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 .kpi-selected .kpi-label { color: var(--ink); }
 
 /* ── Phase 7c: Connect view ──────────────────────────────────────────────────── */
-.connect-lead { color: var(--muted); max-width: 60ch; margin: 0 4px 14px; }
+.connect-lead { color: var(--muted); max-width: 64ch; margin: 0 0 var(--space-4); line-height: 1.5; }
 .connect-lead strong { color: var(--ink); }
 .maturity {
   display: flex;
@@ -630,6 +658,10 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
   display: flex;
   align-items: flex-start;
   gap: 18px;
+  /* One content container (Phase 2): the sidebar + content column is capped and centered, so
+     EVERY page's column starts and ends on the same line — no edge-to-edge vs narrow drift. */
+  max-width: var(--content-max);
+  margin: 0 auto;
 }
 .sidebar {
   flex: 0 0 208px;
@@ -880,7 +912,7 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 }
 
 /* ── Phase W1 — Onboarding wizard ("Add an agent") ──────────────────────────── */
-.onboarding-lede { color: var(--muted); max-width: 64ch; margin: 6px 4px 22px; }
+.onboarding-lede { color: var(--muted); max-width: 64ch; margin: 0 0 var(--space-4); line-height: 1.5; }
 .onboarding-lede strong { color: var(--ink); }
 
 .wiz-steps {
@@ -946,3 +978,141 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 .t-source { font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; font-family: var(--font-mono); }
 .t-source.src-platform { color: var(--band-shadow); background: color-mix(in srgb, var(--band-shadow) 16%, white); }
 .t-source.src-agent { color: var(--band-copilot); background: color-mix(in srgb, var(--band-copilot) 12%, white); }
+
+/* ══ Phase 2 — shared primitives (button/field system, mode chip, signature readiness row) ══ */
+
+/* Mode chip — the band-colored operating-mode chip (Solo/Co-Pilot/Shadow/SUSPENDED), keyed by
+   data-band off the LOCKED band hexes. Reused on the fleet board + readiness rows. Distinct from
+   the governance StatusChip (which is action/tone-keyed); together: band-mode + governance-state. */
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 8%, white);
+}
+.mode-chip[data-band='SOLO'] {
+  color: var(--band-solo);
+  background: color-mix(in srgb, var(--band-solo) 12%, white);
+  border-color: color-mix(in srgb, var(--band-solo) 35%, white);
+}
+.mode-chip[data-band='CO_PILOT'] {
+  color: var(--band-copilot);
+  background: color-mix(in srgb, var(--band-copilot) 12%, white);
+  border-color: color-mix(in srgb, var(--band-copilot) 35%, white);
+}
+.mode-chip[data-band='SHADOW'] {
+  color: var(--band-shadow);
+  background: color-mix(in srgb, var(--band-shadow) 14%, white);
+  border-color: color-mix(in srgb, var(--band-shadow) 35%, white);
+}
+.mode-chip[data-band='SUSPENDED'] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, white);
+  border-color: color-mix(in srgb, var(--danger) 35%, white);
+}
+
+/* Signature readiness row (Phase 2): chip · key · 3-zone ladder w/ marker · score. The score is
+   IBM Plex Mono; a null readiness renders N/A (never 0). The reason note drops to a full-width
+   caption so the signature line stays clean. */
+.fleet-row {
+  grid-template-columns: auto minmax(150px, 1.2fr) minmax(170px, 2fr) auto auto auto;
+}
+.fleet-score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fleet-score[data-na='true'] {
+  color: var(--muted);
+  font-weight: 500;
+}
+.fleet-row .reason-note {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
+/* Button system — one set: primary (.approve), secondary (.btn-secondary), ghost (.lens). Shared
+   control height + radius so the full-width "Create rule" and the inline "Provision"/"Invite"
+   read as the same family. */
+.approve,
+.btn-secondary,
+.lens {
+  min-height: var(--control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+}
+.btn-secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  padding: 0 14px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.btn-secondary:hover {
+  border-color: color-mix(in srgb, var(--band-copilot) 40%, white);
+}
+/* The ghost pill keeps its rounded shape but adopts the shared height for alignment. */
+.lens {
+  border-radius: 999px;
+}
+/* "Create rule" no longer stretches the form width — it sits inline like the other primaries. */
+.rule-form .approve {
+  align-self: flex-start;
+}
+
+/* Field system — one field style (consistent height, border, radius, label spacing). .field-input
+   normalizes the bare inputs/selects on People & Agents to match .gw-input elsewhere. */
+.field-input {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  min-height: var(--control-h);
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+}
+.field-input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--band-copilot) 60%, white);
+  outline-offset: 1px;
+  border-color: var(--band-copilot);
+}
+
+/* Create-forms (Invite / Provision) — one inline row on the 8pt grid, primary button trailing.
+   Previously unstyled (fields stacked flush to the card edge); this gives People & Agents the
+   same form rhythm as the rest of the system. */
+.invite-form,
+.provision-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.invite-form .field-input,
+.provision-form .field-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.inline-form,
+.member-role-form,
+.member-remove-form {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}

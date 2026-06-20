@@ -81,8 +81,8 @@ export default async function AdminAgentsPage() {
         <h2>Agents</h2>
         {canAgents ? (
           <form action={provisionAction} className="provision-form glass">
-            <input name="agentKey" placeholder="agent-key (immutable)" required />
-            <input name="displayName" placeholder="display name (optional)" />
+            <input className="field-input" name="agentKey" placeholder="agent-key (immutable)" required />
+            <input className="field-input" name="displayName" placeholder="display name (optional)" />
             <button type="submit" className="approve">
               Provision
             </button>
@@ -100,7 +100,7 @@ export default async function AdminAgentsPage() {
                 {canAgents && !terminal ? (
                   <form action={renameAction} className="inline-form">
                     <input type="hidden" name="agentKey" value={a.agentKey} />
-                    <input name="displayName" placeholder="rename" />
+                    <input className="field-input" name="displayName" placeholder="rename" />
                     <button type="submit" className="lens">Rename</button>
                   </form>
                 ) : null}

@@ -1,5 +1,6 @@
 import type { TaskGovernanceView } from '@provable/contracts';
 import { rowAction } from '@/lib/fleet-view';
+import { ModeChip } from './mode-chip';
 import { ReadinessLadder } from './readiness-ladder';
 import { StatusChip } from './status-chip';
 
@@ -30,6 +31,8 @@ export function FleetRow({
   const canOverride = canFreeSet && task.effectiveMode !== 'RETIRED';
   return (
     <li className="fleet-row glass" data-task={`${task.agentKey}:${task.taskKey}`} data-status={task.status}>
+      <ModeChip mode={task.effectiveMode} status={task.status} />
+
       <div className="fleet-id">
         <span className="agent-key">{task.agentKey}</span>
         <span className="task-key">{task.taskKey}</span>
@@ -41,6 +44,11 @@ export function FleetRow({
         effectiveMode={task.effectiveMode}
         status={task.status}
       />
+
+      {/* IBM Plex Mono readiness score; null renders N/A (never 0) — honesty preserved. */}
+      <span className="fleet-score" data-score data-na={task.score === null} title="readiness score">
+        {task.score === null ? 'N/A' : task.score.toFixed(1)}
+      </span>
 
       <StatusChip task={task} />
 
