@@ -147,10 +147,13 @@ function KpiRow({
         value={s.hasCostSignal ? s.tokenSpend.toLocaleString() : '—'}
         sub={s.hasCostSignal ? (s.usdSpend > 0 ? usd(s.usdSpend) : 'USD N/A — unknown model') : 'no cost signal yet'}
       />
+      {/* ROI depends on real agent cost. When tokens flowed but nothing priced (unknown model),
+          the Token-spend sub shows "USD N/A" — the projection must agree, not assume $0. Same
+          null gate as the Cost & ROI page. */}
       <KpiCard
         label="ROI projection"
-        value={usd(s.roi.projectedSavingsIfPromotedUsd)}
-        sub="projection · hover for assumptions"
+        value={s.hasCostSignal && s.usdSpend === 0 ? 'N/A' : usd(s.roi.projectedSavingsIfPromotedUsd)}
+        sub={s.hasCostSignal && s.usdSpend === 0 ? "can't compute — agent cost unknown" : 'projection · hover for assumptions'}
         tone="projection"
         title={roiAssumptions}
       />
@@ -444,6 +447,12 @@ export function VisibilitySection({ rows }: { rows: VisibilityRow[] }) {
 // ── Cost & ROI ───────────────────────────────────────────────────────────────
 export function CostSection({ cost }: { cost: CostView }) {
   const { org, roi } = cost;
+  // Agent cost is unknown when tokens flowed but nothing priced (unknown model) — the exact case
+  // the top "real agent cost" KPI shows N/A for. The ROI figures that DEPEND on agent cost
+  // (per-decision agent cost, delta, projected total) must take the SAME null path and agree —
+  // never coerce the missing cost to $0. Human cost is assumption-based, so it stays a number.
+  const agentCostUnknown = org.hasCostSignal && org.usd === 0;
+  const agentUsd = (n: number): string => (agentCostUnknown ? 'N/A' : usd(n));
   return (
     <section className="pillar" data-section="cost">
       <h2>{SECTION_TITLE.cost}</h2>
@@ -487,7 +496,7 @@ export function CostSection({ cost }: { cost: CostView }) {
           <span className="roi-tag">PROJECTION</span>
           <span className="roi-title">Proven savings if Shadow agents are promoted</span>
         </div>
-        <div className="roi-figure">{usd(roi.projectedSavingsIfPromotedUsd)}</div>
+        <div className="roi-figure" data-roi-figure>{agentUsd(roi.projectedSavingsIfPromotedUsd)}</div>
         <ul className="roi-assumptions">
           <li>
             assumes <strong>{roi.assumptions.assumedHumanMinutesPerDecision} min</strong> human
@@ -498,14 +507,18 @@ export function CostSection({ cost }: { cost: CostView }) {
             {usd(roi.humanCostPerDecisionUsd)}/decision
           </li>
           <li>
-            agent cost <strong>{usd(roi.agentCostPerDecisionUsd)}/decision</strong> → delta{' '}
-            {usd(roi.costDeltaPerDecisionUsd)}
+            agent cost <strong>{agentUsd(roi.agentCostPerDecisionUsd)}/decision</strong> → delta{' '}
+            {agentUsd(roi.costDeltaPerDecisionUsd)}
           </li>
           <li>
             × <strong>{roi.shadowDecisionVolume}</strong> Shadow-task decisions
           </li>
         </ul>
-        <p className="roi-foot">{roi.label}. Not banked savings.</p>
+        <p className="roi-foot">
+          {agentCostUnknown
+            ? "Can't compute — agent cost unavailable (unknown model). Tokens are tracked, but no USD price means no savings figure."
+            : `${roi.label}. Not banked savings.`}
+        </p>
       </div>
     </section>
   );

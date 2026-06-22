@@ -26,6 +26,31 @@ describe('priceUsd — real USD from the price table; unknown model → null', (
   it('a partial token signal is honest (missing side counted as 0)', () => {
     expect(priceUsd('claude-sonnet-4-6', 1_000_000, null)).toBeCloseTo(3, 10);
   });
+
+  // The Anthropic RESPONSE body returns a dated snapshot, not the bare alias — it must price the same.
+  it('a dated snapshot resolves to its alias price', () => {
+    const alias = priceUsd('claude-sonnet-4-6', 1_000_000, 1_000_000);
+    expect(priceUsd('claude-sonnet-4-6-20251114', 1_000_000, 1_000_000)).toBe(alias);
+    // opus-4-8 dated snapshot prices the same as the alias (and NOT as opus-4-1's $15/$75).
+    expect(priceUsd('claude-opus-4-8-20260321', 1_000_000, 1_000_000)).toBe(
+      priceUsd('claude-opus-4-8', 1_000_000, 1_000_000),
+    );
+    // a `-latest` table key (3.x) still resolves from a dated snapshot of that family.
+    expect(priceUsd('claude-3-5-sonnet-20241022', 1_000_000, 0)).toBe(
+      priceUsd('claude-3-5-sonnet-latest', 1_000_000, 0),
+    );
+  });
+
+  it('an extra qualifier after the family root still resolves (longest-prefix)', () => {
+    expect(priceUsd('claude-sonnet-4-6-v2-20251114', 1_000_000, 1_000_000)).toBe(
+      priceUsd('claude-sonnet-4-6', 1_000_000, 1_000_000),
+    );
+  });
+
+  it('a genuinely unknown family stays null (no false prefix match)', () => {
+    // Not in the table; must NOT borrow opus-4-8's price via a loose prefix.
+    expect(priceUsd('claude-opus-5-0-20270101', 1000, 1000)).toBeNull();
+  });
 });
 
 describe('parseMessagesUsage — non-streaming response body', () => {
