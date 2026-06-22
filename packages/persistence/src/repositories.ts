@@ -54,6 +54,8 @@ export interface AgentRecord {
   agentKey: AgentKey;
   displayName: string | null;
   identityState: AgentIdentityState;
+  suspendedAt: string | null; // agent-wide kill-switch marker (Phase 1); null ⇒ not agent-suspended
+  suspendedBy: string | null; // the human (actor) who issued the agent-wide suspend
   createdAt: string;
 }
 
@@ -79,6 +81,8 @@ export const agentRepo = {
           agentKey: a.agentKey as AgentKey,
           displayName: a.displayName,
           identityState: a.identityState,
+          suspendedAt: a.suspendedAt === null ? null : a.suspendedAt.toISOString(),
+          suspendedBy: a.suspendedBy,
           createdAt: a.createdAt.toISOString(),
         };
   },
@@ -89,6 +93,8 @@ export const agentRepo = {
       agentKey: a.agentKey as AgentKey,
       displayName: a.displayName,
       identityState: a.identityState,
+      suspendedAt: a.suspendedAt === null ? null : a.suspendedAt.toISOString(),
+      suspendedBy: a.suspendedBy,
       createdAt: a.createdAt.toISOString(),
     }));
   },
@@ -122,6 +128,31 @@ export const agentRepo = {
     await tx.agent.updateMany({
       where: { orgId, agentKey, identityState: 'DISCOVERED' },
       data: { identityState: 'ACTIVE' },
+    });
+  },
+
+  /**
+   * Set the durable agent-wide kill-switch marker (Phase 1). The per-task SUSPENDED transitions
+   * are the audit; this is the agent-level record the fan-out writes. ADVISORY — nothing gates on
+   * it yet (Phase 2). Tenant-scoped on (orgId, agentKey).
+   */
+  async setSuspended(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: AgentKey,
+    marker: { at: string; by: string },
+  ): Promise<void> {
+    await tx.agent.update({
+      where: { orgId_agentKey: { orgId, agentKey } },
+      data: { suspendedAt: new Date(marker.at), suspendedBy: marker.by },
+    });
+  },
+
+  /** Clear the agent-wide suspend marker (nulls both columns). Tenant-scoped on (orgId, agentKey). */
+  async clearSuspended(tx: TenantClient, orgId: OrgId, agentKey: AgentKey): Promise<void> {
+    await tx.agent.update({
+      where: { orgId_agentKey: { orgId, agentKey } },
+      data: { suspendedAt: null, suspendedBy: null },
     });
   },
 };
@@ -434,6 +465,26 @@ export const taskRepo = {
     tx: TenantClient,
   ): Promise<{ agentKey: AgentKey; taskKey: TaskKey; effectiveMode: AutonomyMode }[]> {
     const rows = await tx.task.findMany({ orderBy: [{ agentKey: 'asc' }, { taskKey: 'asc' }] });
+    return rows.map((r) => ({
+      agentKey: r.agentKey as AgentKey,
+      taskKey: r.taskKey as TaskKey,
+      effectiveMode: r.effectiveMode,
+    }));
+  },
+
+  /**
+   * All task rows for ONE agent within the current tenant — the agent-wide kill-switch fan-out
+   * target. Tenant-scoped: orgId is in the query (belt-and-suspenders with RLS) alongside agentKey.
+   */
+  async listForAgent(
+    tx: TenantClient,
+    orgId: OrgId,
+    agentKey: AgentKey,
+  ): Promise<{ agentKey: AgentKey; taskKey: TaskKey; effectiveMode: AutonomyMode }[]> {
+    const rows = await tx.task.findMany({
+      where: { orgId, agentKey },
+      orderBy: { taskKey: 'asc' },
+    });
     return rows.map((r) => ({
       agentKey: r.agentKey as AgentKey,
       taskKey: r.taskKey as TaskKey,
