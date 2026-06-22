@@ -14,21 +14,36 @@ export function FleetRow({
   task,
   canApprove,
   canFreeSet,
+  canSuspend,
   busy,
   onApprove,
   onSetMode,
+  onSuspend,
+  onResume,
 }: {
   task: TaskGovernanceView;
   canApprove: boolean;
   canFreeSet: boolean;
+  canSuspend: boolean;
   busy: boolean;
   onApprove: (agentKey: string, taskKey: string) => void;
   onSetMode: (task: TaskGovernanceView) => void;
+  onSuspend: (task: TaskGovernanceView) => void;
+  onResume: (task: TaskGovernanceView) => void;
 }) {
   const action = rowAction(task, canApprove);
   // Free-set is available for operating rows (not terminal/retired). The HELD "Review" link also
   // opens the free-set panel. data-set-mode is NEVER data-approve → integrity is preserved.
   const canOverride = canFreeSet && task.effectiveMode !== 'RETIRED';
+  // Kill-switch affordances (UX-only; the API enforces suspend_agent). Suspend a LIVE row
+  // (OBSERVING + operating bands); Resume a SUSPENDED row. RETIRED is terminal — neither.
+  const isLive =
+    task.effectiveMode === 'OBSERVING' ||
+    task.effectiveMode === 'SHADOW' ||
+    task.effectiveMode === 'CO_PILOT' ||
+    task.effectiveMode === 'SOLO';
+  const showSuspend = canSuspend && isLive;
+  const showResume = canSuspend && task.effectiveMode === 'SUSPENDED';
   return (
     <li className="fleet-row glass" data-task={`${task.agentKey}:${task.taskKey}`} data-status={task.status}>
       <ModeChip mode={task.effectiveMode} status={task.status} />
@@ -81,6 +96,30 @@ export function FleetRow({
           <button className="row-link" data-set-mode onClick={() => onSetMode(task)}>
             Set mode
           </button>
+        ) : null}
+        {showSuspend ? (
+          <button
+            className="row-link danger"
+            data-suspend
+            title="Record an audited suspend. Advisory in Phase 1 — not yet enforced at the gateway."
+            onClick={() => onSuspend(task)}
+          >
+            Suspend
+          </button>
+        ) : null}
+        {showResume ? (
+          <button className="row-link" data-resume onClick={() => onResume(task)}>
+            Resume
+          </button>
+        ) : null}
+        {task.status === 'SUSPENDED' ? (
+          <span
+            className="advisory-tag"
+            data-advisory-tag
+            title="Suspend is recorded & audited, but not yet enforced at the gateway (Phase 2). The agent is not hard-stopped."
+          >
+            advisory
+          </span>
         ) : null}
       </div>
     </li>

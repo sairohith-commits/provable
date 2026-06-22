@@ -57,7 +57,11 @@ export function chipLabel(task: TaskGovernanceView): string {
     case 'DEGRADED':
       return task.score === null ? 'unscored' : 'signal lost · demoted';
     case 'SUSPENDED':
-      return 'suspended · guardrail';
+      // Read the cause: a manual kill-switch (SUSPEND) must NOT read as a guardrail trip.
+      if (task.suspendTrigger === 'SUSPEND') return 'suspended · manual';
+      if (task.suspendTrigger === 'GUARDRAIL') return 'suspended · guardrail';
+      if (task.suspendTrigger === 'DRIFT') return 'suspended · drift';
+      return 'suspended';
   }
 }
 

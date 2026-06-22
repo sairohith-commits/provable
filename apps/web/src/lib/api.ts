@@ -237,6 +237,49 @@ export async function setMode(
   return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
 }
 
+// ── Phase 1 kill-switch: suspend / resume (suspend_agent; OWNER/APPROVER) ──────
+// ADVISORY — records an audited SUSPENDED state; NOT enforced at the gateway yet (Phase 2).
+// taskKey present ⇒ per-task (/agents/:k/tasks/:t/...); taskKey null ⇒ agent-wide (/admin/agents/:k/...).
+function killSwitchUrl(agentKey: string, taskKey: string | null, action: 'suspend' | 'resume'): string {
+  return taskKey === null
+    ? `${apiUrl}/admin/agents/${encodeURIComponent(agentKey)}/${action}`
+    : `${apiUrl}/agents/${encodeURIComponent(agentKey)}/tasks/${encodeURIComponent(taskKey)}/${action}`;
+}
+
+export async function suspend(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  taskKey: string | null,
+  reason: string,
+  approver?: string,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const res = await fetch(killSwitchUrl(agentKey, taskKey, 'suspend'), {
+    method: 'POST',
+    headers: readHeaders(orgId, subject, approver),
+    body: JSON.stringify({ reason }),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+}
+
+export async function resume(
+  orgId: string,
+  subject: string,
+  agentKey: string,
+  taskKey: string | null,
+  reason: string,
+  approver?: string,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const res = await fetch(killSwitchUrl(agentKey, taskKey, 'resume'), {
+    method: 'POST',
+    headers: readHeaders(orgId, subject, approver),
+    body: JSON.stringify({ reason }),
+    cache: 'no-store',
+  });
+  return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+}
+
 // ── Phase C1: admin agent management (manage_agents / activate_deactivate) ─────
 export type IdentityDisplayStatus = 'DISCOVERED' | 'ACTIVE' | 'IDLE' | 'DEACTIVATED' | 'RETIRED';
 export interface AdminAgentRow {

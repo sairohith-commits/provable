@@ -41,7 +41,11 @@ describe('StatusChip spec is exhaustive over GovernanceStatus (no free string)',
     expect(chipLabel(task({ status: 'OBSERVING' }))).toBe('observe-only');
     expect(chipLabel(task({ status: 'DEGRADED', score: null }))).toBe('unscored');
     expect(chipLabel(task({ status: 'DEGRADED', score: 55 }))).toBe('signal lost · demoted');
-    expect(chipLabel(task({ status: 'SUSPENDED' }))).toBe('suspended · guardrail');
+    // SUSPENDED chip reads the cause trigger — a manual kill-switch must NOT read as a guardrail.
+    expect(chipLabel(task({ status: 'SUSPENDED', suspendTrigger: 'SUSPEND' }))).toBe('suspended · manual');
+    expect(chipLabel(task({ status: 'SUSPENDED', suspendTrigger: 'GUARDRAIL' }))).toBe('suspended · guardrail');
+    expect(chipLabel(task({ status: 'SUSPENDED', suspendTrigger: 'DRIFT' }))).toBe('suspended · drift');
+    expect(chipLabel(task({ status: 'SUSPENDED' }))).toBe('suspended'); // unknown cause → honest generic
   });
 
   it('OBSERVING is a neutral/informational chip (observe tone, eye icon) — Phase O2', () => {

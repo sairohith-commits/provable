@@ -886,6 +886,46 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
   color: var(--band-shadow);
 }
 
+/* ── Phase 1 kill-switch: suspend affordance + advisory honesty ───────────────── */
+/* The Suspend control reads as a destructive-but-quiet link (danger hue, still a row-link). */
+.row-link.danger {
+  color: var(--danger, #d4503e);
+}
+/* "advisory" tag on a SUSPENDED row + the panel note: the stop is recorded, NOT yet enforced. */
+.advisory-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  cursor: help;
+}
+.advisory-note {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--warning, #c98a2b);
+  background: rgba(201, 138, 43, 0.08);
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-radius: 4px;
+}
+/* Scope radio group in the suspend panel. */
+.radio {
+  display: block;
+  font-size: 0.85rem;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.radio input {
+  margin-right: 6px;
+}
+.radio .muted {
+  color: var(--muted);
+}
+
 /* Verdict-mix legend — color → meaning, so the stacked bar is self-describing. */
 .mix-legend {
   list-style: none;

@@ -31,6 +31,7 @@ import { FleetRow } from './fleet-row';
 import { FreeSetPanel } from './free-set-panel';
 import { PillarShell } from './pillar-shell';
 import { StatusChip } from './status-chip';
+import { SuspendPanel } from './suspend-panel';
 
 const POLL_MS = 4000;
 
@@ -170,7 +171,10 @@ export function OverviewClient({ initial, role }: { initial: OverviewData; role:
   // permission. The API independently enforces approve_transition on every call.
   const canApprove = can(role, 'approve_transition');
   const canFreeSet = can(role, 'free_set_mode');
+  const canSuspend = can(role, 'suspend_agent');
   const [override, setOverride] = useState<TaskGovernanceView | null>(null);
+  // Kill-switch panel: which task, and whether we're suspending or resuming it.
+  const [killSwitch, setKillSwitch] = useState<{ task: TaskGovernanceView; action: 'suspend' | 'resume' } | null>(null);
 
   const refresh = useCallback(async () => {
     const res = await fetch('/api/overview', { cache: 'no-store' });
@@ -220,7 +224,10 @@ export function OverviewClient({ initial, role }: { initial: OverviewData; role:
           onApprove={approve}
           canApprove={canApprove}
           canFreeSet={canFreeSet}
+          canSuspend={canSuspend}
           onSetMode={setOverride}
+          onSuspend={(task) => setKillSwitch({ task, action: 'suspend' })}
+          onResume={(task) => setKillSwitch({ task, action: 'resume' })}
         />
 
         <details className="transition-history" data-transition-history>
@@ -230,6 +237,13 @@ export function OverviewClient({ initial, role }: { initial: OverviewData; role:
       </div>
 
       <FreeSetPanel task={override} actor="you" onClose={() => setOverride(null)} onDone={refresh} />
+      <SuspendPanel
+        task={killSwitch?.task ?? null}
+        action={killSwitch?.action ?? 'suspend'}
+        actor="you"
+        onClose={() => setKillSwitch(null)}
+        onDone={refresh}
+      />
     </PillarShell>
   );
 }
@@ -242,7 +256,10 @@ function ReadinessSection({
   onApprove,
   canApprove,
   canFreeSet,
+  canSuspend,
   onSetMode,
+  onSuspend,
+  onResume,
 }: {
   groups: AgentGroup[];
   filter: QueueFilter;
@@ -250,7 +267,10 @@ function ReadinessSection({
   onApprove: (a: string, t: string) => void;
   canApprove: boolean;
   canFreeSet: boolean;
+  canSuspend: boolean;
   onSetMode: (task: TaskGovernanceView) => void;
+  onSuspend: (task: TaskGovernanceView) => void;
+  onResume: (task: TaskGovernanceView) => void;
 }) {
   // Empty list: a filtered queue gets its own honest copy; the unfiltered list keeps the
   // "nothing reporting" message. (queueEmptyCopy returns null when filter === null.)
@@ -283,9 +303,12 @@ function ReadinessSection({
                   task={task}
                   canApprove={canApprove}
                   canFreeSet={canFreeSet}
+                  canSuspend={canSuspend}
                   busy={pending === `${task.agentKey}:${task.taskKey}`}
                   onApprove={onApprove}
                   onSetMode={onSetMode}
+                  onSuspend={onSuspend}
+                  onResume={onResume}
                 />
               ))}
             </ul>
@@ -328,9 +351,14 @@ export function GovernanceSection({ transitions }: { transitions: TransitionView
                 </span>
               ) : t.actor ? (
                 <span className="t-actor" data-actor>
-                  ✎ override by {t.actorDisplay ?? shortSubject(t.actor)}
+                  ✎ {t.trigger === 'SUSPEND' ? 'suspended' : t.trigger === 'RESUME' ? 'resumed' : 'override'} by{' '}
+                  {t.actorDisplay ?? shortSubject(t.actor)}
                 </span>
               ) : null}
+              {/* The rationale (score delta, drift metric, guardrail id, or kill-switch reason). */}
+              <span className="t-reason" data-reason title={t.reason}>
+                {t.reason}
+              </span>
               <span className="t-at" title={t.at}>
                 {relativeTime(t.at)}
               </span>

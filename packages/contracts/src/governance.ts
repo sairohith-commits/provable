@@ -1,5 +1,5 @@
 import type { AgentKey, TaskKey } from './identifiers.js';
-import type { AutonomyMode } from './lifecycle.js';
+import type { AutonomyMode, TransitionTrigger } from './lifecycle.js';
 
 /**
  * Governance status (Phase U1) — a CLOSED, derived taxonomy. Each task resolves to EXACTLY ONE
@@ -29,6 +29,10 @@ export interface TaskGovernanceView {
   readonly headroomTo: AutonomyMode | null; // next band up if PROMOTABLE/HELD, else null
   readonly actionAvailable: boolean; // true ONLY for a live, valid promotion
   readonly reasonNote: string; // short human sub-line
+  // The trigger of the transition that set the CURRENT effectiveMode when SUSPENDED — lets the UI
+  // distinguish a manual kill-switch (SUSPEND) from a platform GUARDRAIL trip or DRIFT. Only
+  // meaningful while status === 'SUSPENDED'; null/absent otherwise.
+  readonly suspendTrigger?: TransitionTrigger | null;
 }
 
 /** Overview KPIs DERIVED from the same views — counts can never disagree with the rows. */
