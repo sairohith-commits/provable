@@ -9,8 +9,17 @@ import type {
   VerdictKind,
 } from '@provable/contracts';
 import { OUTCOMES, ROLES, VERDICT_KINDS, can } from '@provable/contracts';
-import { DEFAULT_GOVERNANCE_POLICY, computeReadiness, manualOverride, stepLifecycle, transitionIdentity } from '@provable/core';
-import type { IdentityEvent, TaskScope } from '@provable/core';
+import {
+  DEFAULT_GOVERNANCE_POLICY,
+  LifecycleStateError,
+  computeReadiness,
+  manualOverride,
+  resumeAgent,
+  stepLifecycle,
+  suspendAgent,
+  transitionIdentity,
+} from '@provable/core';
+import type { IdentityEvent, LifecycleStepResult, TaskScope } from '@provable/core';
 import {
   agentRepo,
   apiKeyRepo,
@@ -483,6 +492,52 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     return reply.send(result);
   });
 
+  // ── Kill-switch: per-task suspend / resume (suspend_agent; OWNER/APPROVER) ───────────
+  // Manual, audited park (suspend) / recover (resume) of ONE agent×task. Internal-only (a machine
+  // key has no internal context). ADVISORY in Phase 1: emits an audited SUSPEND/RESUME transition
+  // and writes effectiveMode; NOTHING gates on SUSPENDED yet (the gateway gate is Phase 2). suspend
+  // and resume share this shape — only the pure core helper differs. The core LifecycleStateError
+  // (already-SUSPENDED / RETIRED / resume-not-suspended) maps to 409.
+  const taskKillSwitch = (path: string, apply: typeof suspendAgent | typeof resumeAgent): void => {
+    app.post(`/agents/:agentKey/tasks/:taskKey/${path}`, async (req, reply) => {
+      const auth = await requireInternalPermission(req, reply, 'suspend_agent');
+      if (auth === null) return;
+      const { agentKey, taskKey } = req.params as { agentKey: string; taskKey: string };
+      const { reason } = (req.body ?? {}) as { reason?: string };
+      const actor = auth.ctx.approver ?? auth.ctx.subject;
+      if (actor === undefined || actor.length === 0) {
+        return reply.code(400).send({ error: 'actor (approver/subject) required' });
+      }
+      if (typeof reason !== 'string' || reason.trim().length === 0) {
+        return reply.code(400).send({ error: 'reason required' });
+      }
+      const orgId = auth.ctx.orgId;
+      const asOf = new Date().toISOString();
+      const result = await withTenant(orgId, async (tx) => {
+        const scope: TaskScope = { orgId, agentKey: agentKey as AgentKey, taskKey: taskKey as TaskKey };
+        const current = await taskRepo.findEffectiveMode(tx, orgId, scope.agentKey, scope.taskKey);
+        if (current === null) return { notFound: true as const };
+        const ports = makeRecomputePorts(tx);
+        const state = await ports.lifecycle.read(scope);
+        let step: LifecycleStepResult;
+        try {
+          step = apply({ ids: scope, state, actor, reason: reason.trim(), asOf });
+        } catch (e) {
+          if (e instanceof LifecycleStateError) return { blocked: e.message };
+          throw e;
+        }
+        for (const t of step.transitions) await ports.transitions.append(t);
+        await ports.lifecycle.write(scope, step.state);
+        return { effectiveMode: step.effectiveMode, transitions: [...step.transitions] };
+      });
+      if ('notFound' in result) return reply.code(404).send({ error: 'unknown agent×task' });
+      if ('blocked' in result) return reply.code(409).send({ error: result.blocked });
+      return reply.send(result);
+    });
+  };
+  taskKillSwitch('suspend', suspendAgent);
+  taskKillSwitch('resume', resumeAgent);
+
   // ── RBAC: the caller's own role (Phase B) ────────────────────────────────────
   // Internal-only, EXEMPT from permission checks: any authenticated internal request may ask
   // "what is my role?" and gets role-or-null. This is also where a pending invite binds to the
@@ -659,6 +714,78 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   identityAction('deactivate', 'activate_deactivate', 'INACTIVITY'); // ACTIVE → DORMANT
   identityAction('reactivate', 'activate_deactivate', 'ACTIVITY'); //  DORMANT/DISCOVERED → ACTIVE
   identityAction('retire', 'manage_agents', 'RETIRE'); //               → RETIRED (terminal)
+
+  // ── Kill-switch: agent-wide suspend / resume (suspend_agent) ─────────────────────────
+  // Fans the per-task core helper across ALL of the agent's tasks (one audited transition per
+  // CHANGED task) AND writes the durable agent-level marker. The marker reflects operator INTENT:
+  // it is set/cleared whenever the route succeeds (agent exists, not a 409) — even for a zero-task
+  // agent (a valid no-op fan-out). Mixed state: skip tasks already in the target state, act on the
+  // rest, report counts. Only a 409 when EVERY task is already in the wrong state (zero would change).
+  const agentKillSwitch = (
+    path: string,
+    apply: typeof suspendAgent | typeof resumeAgent,
+    markerLabel: 'suspended' | 'cleared',
+    countKey: 'suspended' | 'resumed',
+  ): void => {
+    app.post(`/admin/agents/:agentKey/${path}`, async (req, reply) => {
+      const auth = await requireInternalPermission(req, reply, 'suspend_agent');
+      if (auth === null) return;
+      const { agentKey } = req.params as { agentKey: string };
+      const { reason } = (req.body ?? {}) as { reason?: string };
+      const actor = auth.ctx.approver ?? auth.ctx.subject;
+      if (actor === undefined || actor.length === 0) {
+        return reply.code(400).send({ error: 'actor (approver/subject) required' });
+      }
+      if (typeof reason !== 'string' || reason.trim().length === 0) {
+        return reply.code(400).send({ error: 'reason required' });
+      }
+      const orgId = auth.ctx.orgId;
+      const asOf = new Date().toISOString();
+      const ak = agentKey as AgentKey;
+      const result = await withTenant(orgId, async (tx) => {
+        const agent = await agentRepo.find(tx, orgId, ak);
+        if (agent === null) return { notFound: true as const };
+        const ports = makeRecomputePorts(tx);
+        const tasks = await taskRepo.listForAgent(tx, orgId, ak);
+        let changed = 0;
+        let skipped = 0;
+        for (const t of tasks) {
+          const scope: TaskScope = { orgId, agentKey: ak, taskKey: t.taskKey };
+          const state = await ports.lifecycle.read(scope);
+          let step: LifecycleStepResult;
+          try {
+            step = apply({ ids: scope, state, actor, reason: reason.trim(), asOf });
+          } catch (e) {
+            if (e instanceof LifecycleStateError) {
+              skipped += 1; // already in the target state — leave it, don't fail the batch
+              continue;
+            }
+            throw e;
+          }
+          for (const tr of step.transitions) await ports.transitions.append(tr);
+          await ports.lifecycle.write(scope, step.state);
+          changed += 1;
+        }
+        // EVERY task already in the wrong state (and there were tasks) → nothing to do → 409.
+        if (tasks.length > 0 && changed === 0) return { allBlocked: true as const, skipped };
+        // Marker = operator intent: set/cleared whenever the route succeeds (incl. zero-task agent).
+        if (markerLabel === 'suspended') {
+          await agentRepo.setSuspended(tx, orgId, ak, { at: asOf, by: actor });
+        } else {
+          await agentRepo.clearSuspended(tx, orgId, ak);
+        }
+        return { changed, skipped };
+      });
+      if ('notFound' in result) return reply.code(404).send({ error: 'no such agent' });
+      if ('allBlocked' in result) {
+        const already = markerLabel === 'suspended' ? 'SUSPENDED' : 'not SUSPENDED';
+        return reply.code(409).send({ error: `every task is already ${already}`, skipped: result.skipped });
+      }
+      return reply.send({ marker: markerLabel, [countKey]: result.changed, skipped: result.skipped });
+    });
+  };
+  agentKillSwitch('suspend', suspendAgent, 'suspended', 'suspended');
+  agentKillSwitch('resume', resumeAgent, 'cleared', 'resumed');
 
   // ── Phase C1: org-scoped key management (mint / rotate / revoke) — manage_keys ──
   app.get('/admin/keys', async (req, reply) => {
