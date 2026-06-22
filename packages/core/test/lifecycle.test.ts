@@ -10,11 +10,14 @@ import type {
 import {
   DEFAULT_GOVERNANCE_POLICY,
   INITIAL_LIFECYCLE_STATE,
+  LifecycleStateError,
   computeReadiness,
   impliedBandForScore,
   manualOverride,
+  resumeAgent,
   runLifecycle,
   stepLifecycle,
+  suspendAgent,
 } from '../src/index.js';
 import type {
   ComponentKey,
@@ -413,5 +416,137 @@ describe('MANUAL_OVERRIDE (free_set_mode) — first-class, audited, score untouc
     const c = stepLifecycle({ ids, state: b.state, readiness: rr(30), policy, asOf: ASOF });
     const d = stepLifecycle({ ids, state: c.state, readiness: rr(30), policy, asOf: ASOF });
     expect(d.effectiveMode).toBe('CO_PILOT'); // the subsequent decline demotes
+  });
+});
+
+describe('suspend_agent kill-switch (suspendAgent)', () => {
+  const allowed: LifecycleState['effectiveMode'][] = ['OBSERVING', 'SHADOW', 'CO_PILOT', 'SOLO'];
+
+  it('suspends from each allowed mode (OBSERVING/SHADOW/CO_PILOT/SOLO) → SUSPENDED, one SUSPEND transition', () => {
+    for (const mode of allowed) {
+      const r = suspendAgent({ ids, state: operating(mode), actor: 'alice', reason: 'incident', asOf: ASOF });
+      expect(r.effectiveMode).toBe('SUSPENDED');
+      expect(r.state.effectiveMode).toBe('SUSPENDED');
+      expect(r.transitions).toHaveLength(1);
+      const t = r.transitions[0];
+      expect(t?.fromMode).toBe(mode);
+      expect(t?.toMode).toBe('SUSPENDED');
+      expect(t?.trigger).toBe('SUSPEND');
+      expect(t?.status).toBe('APPLIED');
+      expect(t?.direction).toBe('DEMOTION');
+      expect(t?.actor).toBe('alice');
+      expect((t?.actor ?? '').length).toBeGreaterThan(0); // makeTransition enforces non-empty actor
+      expect(t?.approver).toBeUndefined();
+      expect(t?.reason).toBe('incident');
+    }
+  });
+
+  it('suspend-from-SUSPENDED throws (already parked — LifecycleStateError → 409)', () => {
+    expect(() => suspendAgent({ ids, state: operating('SUSPENDED'), actor: 'a', reason: 'r', asOf: ASOF })).toThrow(
+      LifecycleStateError,
+    );
+    expect(() => suspendAgent({ ids, state: operating('SUSPENDED'), actor: 'a', reason: 'r', asOf: ASOF })).toThrow(
+      /already SUSPENDED/i,
+    );
+  });
+
+  it('suspend-from-RETIRED throws (terminal — LifecycleStateError → 409)', () => {
+    expect(() => suspendAgent({ ids, state: operating('RETIRED'), actor: 'a', reason: 'r', asOf: ASOF })).toThrow(
+      LifecycleStateError,
+    );
+    expect(() => suspendAgent({ ids, state: operating('RETIRED'), actor: 'a', reason: 'r', asOf: ASOF })).toThrow(
+      /RETIRED/i,
+    );
+  });
+
+  it('suspend supersedes a pending promotion (audited SUPERSEDED + the SUSPEND)', () => {
+    const pending: LifecycleState = {
+      ...operating('CO_PILOT'),
+      pendingPromotion: { toMode: 'SOLO', awaitingApproval: true },
+    };
+    const r = suspendAgent({ ids, state: pending, actor: 'alice', reason: 'incident', asOf: ASOF });
+    expect(r.effectiveMode).toBe('SUSPENDED');
+    expect(r.transitions).toHaveLength(2);
+    const superseded = r.transitions[0];
+    expect(superseded?.toMode).toBe('SOLO');
+    expect(superseded?.status).toBe('SUPERSEDED');
+    expect(superseded?.trigger).toBe('SCORE_CROSS');
+    const suspend = r.transitions[1];
+    expect(suspend?.trigger).toBe('SUSPEND');
+    expect(suspend?.toMode).toBe('SUSPENDED');
+    expect(r.state.pendingPromotion).toBeUndefined();
+  });
+
+  it('suspend PRESERVES lastImpliedRank (the earned baseline survives the park)', () => {
+    const earnedSolo: LifecycleState = { ...operating('SOLO'), lastImpliedRank: 3 };
+    const r = suspendAgent({ ids, state: earnedSolo, actor: 'alice', reason: 'incident', asOf: ASOF });
+    expect(r.state.effectiveMode).toBe('SUSPENDED');
+    expect(r.state.lastImpliedRank).toBe(3); // baseline NOT cleared — score history is not erased
+  });
+
+  it('suspend requires a non-empty actor and reason', () => {
+    expect(() => suspendAgent({ ids, state: operating('SOLO'), actor: '', reason: 'r', asOf: ASOF })).toThrow(/actor/i);
+    expect(() => suspendAgent({ ids, state: operating('SOLO'), actor: 'a', reason: '', asOf: ASOF })).toThrow(/reason/i);
+  });
+});
+
+describe('resume kill-switch recovery (resumeAgent)', () => {
+  it('resumes from SUSPENDED → OBSERVING with exactly one RESUME transition', () => {
+    const r = resumeAgent({ ids, state: operating('SUSPENDED'), actor: 'alice', reason: 'cleared', asOf: ASOF });
+    expect(r.effectiveMode).toBe('OBSERVING');
+    expect(r.state.effectiveMode).toBe('OBSERVING');
+    expect(r.transitions).toHaveLength(1);
+    const t = r.transitions[0];
+    expect(t?.fromMode).toBe('SUSPENDED');
+    expect(t?.toMode).toBe('OBSERVING');
+    expect(t?.trigger).toBe('RESUME');
+    expect(t?.status).toBe('APPLIED');
+    expect(t?.direction).toBe('PROMOTION');
+    expect(t?.actor).toBe('alice');
+    expect((t?.actor ?? '').length).toBeGreaterThan(0); // non-empty actor enforced
+    expect(t?.approver).toBeUndefined();
+    expect(t?.reason).toBe('cleared');
+  });
+
+  it('resume CLEARS lastImpliedRank and zeroes ALL counters (a clean OBSERVING slate)', () => {
+    const suspendedDirty: LifecycleState = {
+      effectiveMode: 'SUSPENDED',
+      consecutivePromotionReady: 2,
+      consecutiveSubFloor: 1,
+      consecutiveInsufficient: 3,
+      lastImpliedRank: 3,
+      pendingPromotion: { toMode: 'SOLO', awaitingApproval: true },
+    };
+    const r = resumeAgent({ ids, state: suspendedDirty, actor: 'alice', reason: 'cleared', asOf: ASOF });
+    expect(r.state.effectiveMode).toBe('OBSERVING');
+    expect(r.state.consecutivePromotionReady).toBe(0);
+    expect(r.state.consecutiveSubFloor).toBe(0);
+    expect(r.state.consecutiveInsufficient).toBe(0);
+    expect(r.state.lastImpliedRank).toBeUndefined(); // baseline CLEARED — re-earn from the bottom
+    expect(r.state.pendingPromotion).toBeUndefined();
+  });
+
+  it('resume-from-non-SUSPENDED throws (LifecycleStateError → 409) for every other mode', () => {
+    const others: LifecycleState['effectiveMode'][] = ['OBSERVING', 'SHADOW', 'CO_PILOT', 'SOLO', 'RETIRED'];
+    for (const mode of others) {
+      expect(() => resumeAgent({ ids, state: operating(mode), actor: 'a', reason: 'r', asOf: ASOF })).toThrow(
+        LifecycleStateError,
+      );
+    }
+  });
+
+  it('resume requires a non-empty actor and reason', () => {
+    expect(() => resumeAgent({ ids, state: operating('SUSPENDED'), actor: '', reason: 'r', asOf: ASOF })).toThrow(
+      /actor/i,
+    );
+    expect(() => resumeAgent({ ids, state: operating('SUSPENDED'), actor: 'a', reason: '', asOf: ASOF })).toThrow(
+      /reason/i,
+    );
+  });
+
+  it('the auto-engine never self-resumes: stepLifecycle step 5 keeps SUSPENDED a hard sink', () => {
+    const held = stepLifecycle({ ids, state: operating('SUSPENDED'), readiness: rr(95), policy, asOf: ASOF });
+    expect(held.effectiveMode).toBe('SUSPENDED');
+    expect(held.transitions).toHaveLength(0); // only a route-driven resumeAgent leaves SUSPENDED
   });
 });

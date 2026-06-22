@@ -135,6 +135,18 @@ function round2(n: number): number {
 
 // ─── transition + state builders ─────────────────────────────────────────────
 
+/**
+ * Triggers authorized by an ACTOR (a human acting directly), NOT by an earned-promotion approver:
+ * a free-set override and the two kill-switch actions. Each carries `actor` and is exempt from the
+ * "an APPLIED PROMOTION needs an approver" rule (a RESUME is a PROMOTION by band rank but is a
+ * human recovery, not an earned promotion).
+ */
+const ACTOR_AUTHORIZED_TRIGGERS: ReadonlySet<TransitionTrigger> = new Set<TransitionTrigger>([
+  'MANUAL_OVERRIDE',
+  'SUSPEND',
+  'RESUME',
+]);
+
 function makeTransition(
   ids: LifecycleIds,
   fromMode: AutonomyMode,
@@ -148,10 +160,10 @@ function makeTransition(
   actor?: string,
 ): Transition {
   // Business invariants the relaxed contract type can't express:
-  if (trigger === 'MANUAL_OVERRIDE') {
-    // A manual override is authorized by an ACTOR (the human), not an earned-promotion approver.
+  if (ACTOR_AUTHORIZED_TRIGGERS.has(trigger)) {
+    // Authorized by an ACTOR (the human), not an earned-promotion approver.
     if (actor === undefined || actor === '') {
-      throw new Error('core/lifecycle invariant: a MANUAL_OVERRIDE must carry an actor');
+      throw new Error(`core/lifecycle invariant: a ${trigger} must carry an actor`);
     }
   } else if (direction === 'PROMOTION' && status === 'APPLIED' && (approver === undefined || approver === '')) {
     // An EARNED (SCORE_CROSS) promotion may only be APPLIED with a human approver.
@@ -528,6 +540,127 @@ export function manualOverride(input: ManualOverrideInput): LifecycleStepResult 
   transitions.push(transition);
   const next = mkState(target, 0, 0, undefined, 0, state.lastImpliedRank);
   return { transitions, state: next, effectiveMode: target };
+}
+
+// ─── manual kill-switch (suspend_agent) ──────────────────────────────────────
+
+/**
+ * A suspend/resume requested from a state that forbids it: suspend of an already-SUSPENDED or a
+ * RETIRED (terminal) agent, or a resume of a task that is not SUSPENDED. A typed domain error so
+ * the API can `instanceof`-discriminate it and map it to HTTP 409 (vs. a 400 input error / 500).
+ */
+export class LifecycleStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LifecycleStateError';
+  }
+}
+
+export interface SuspendAgentInput {
+  readonly ids: LifecycleIds;
+  readonly state: LifecycleState;
+  readonly actor: string;
+  readonly reason: string;
+  readonly asOf: string;
+}
+
+/**
+ * suspend_agent (kill-switch) — an authorized human parks an agent×task at SUSPENDED IMMEDIATELY:
+ * one APPLIED, immutable, audited transition stamped with `actor` (the human) + `reason`, trigger
+ * SUSPEND (distinct from a free-set MANUAL_OVERRIDE and from a platform GUARDRAIL trip). Allowed
+ * from OBSERVING/SHADOW/CO_PILOT/SOLO; SUSPENDED (already parked) and RETIRED (terminal) throw.
+ * The earned baseline (`lastImpliedRank`) is PRESERVED — suspend does not erase score history.
+ * Pure. Phase 1 is ADVISORY: this records intent; nothing gates on SUSPENDED yet (Phase 2).
+ */
+export function suspendAgent(input: SuspendAgentInput): LifecycleStepResult {
+  const { ids, state, actor, reason, asOf } = input;
+  const from = state.effectiveMode;
+  if (from === 'SUSPENDED') {
+    throw new LifecycleStateError('suspendAgent: already SUSPENDED');
+  }
+  if (from === 'RETIRED') {
+    throw new LifecycleStateError('suspendAgent: cannot suspend a RETIRED (terminal) agent');
+  }
+  if (actor === '') throw new Error('suspendAgent: actor required');
+  if (reason === '') throw new Error('suspendAgent: reason required');
+
+  const transitions: Transition[] = [];
+  // A pending promotion is SUPERSEDED (terminal, audited) by the human's direct kill — same as the
+  // guardrail-trip suspend path, so the read-model never treats a stale pending as live.
+  if (state.pendingPromotion) {
+    transitions.push(
+      makeTransition(
+        ids,
+        from,
+        state.pendingPromotion.toMode,
+        'PROMOTION',
+        'SCORE_CROSS',
+        'SUPERSEDED',
+        `promotion to ${state.pendingPromotion.toMode} superseded by manual suspend`,
+        asOf,
+      ),
+    );
+  }
+  transitions.push(
+    makeTransition(
+      ids,
+      from,
+      'SUSPENDED',
+      'DEMOTION',
+      'SUSPEND',
+      'APPLIED',
+      reason,
+      asOf,
+      undefined, // no approver — a manual suspend is authorized by the actor
+      actor,
+    ),
+  );
+  // Counters reset; lastImpliedRank PRESERVED (suspend does not clear the regression baseline).
+  const next = mkState('SUSPENDED', 0, 0, undefined, 0, state.lastImpliedRank);
+  return { transitions, state: next, effectiveMode: 'SUSPENDED' };
+}
+
+export interface ResumeAgentInput {
+  readonly ids: LifecycleIds;
+  readonly state: LifecycleState;
+  readonly actor: string;
+  readonly reason: string;
+  readonly asOf: string;
+}
+
+/**
+ * resume (kill-switch recovery) — ROUTE-DRIVEN ONLY (the auto-engine never self-resumes; step 5 of
+ * stepLifecycle keeps SUSPENDED a hard sink). One APPLIED, audited transition SUSPENDED → OBSERVING,
+ * trigger RESUME, stamped with `actor` + `reason`. The target is ALWAYS OBSERVING: the agent re-walks
+ * the gated ladder from the bottom, so the "hard to climb" asymmetry holds. Decision history is NOT
+ * wiped (no watermark) — readiness is recomputed from the existing window; the ladder does the gating.
+ * Resetting to a clean OBSERVING slate: all counters 0, lastImpliedRank CLEARED, no pending. Pure.
+ */
+export function resumeAgent(input: ResumeAgentInput): LifecycleStepResult {
+  const { ids, state, actor, reason, asOf } = input;
+  const from = state.effectiveMode;
+  if (from !== 'SUSPENDED') {
+    throw new LifecycleStateError(`resumeAgent: can only resume from SUSPENDED, got ${from}`);
+  }
+  if (actor === '') throw new Error('resumeAgent: actor required');
+  if (reason === '') throw new Error('resumeAgent: reason required');
+
+  const transition = makeTransition(
+    ids,
+    'SUSPENDED',
+    'OBSERVING',
+    'PROMOTION',
+    'RESUME',
+    'APPLIED',
+    reason,
+    asOf,
+    undefined, // no approver — a manual resume is authorized by the actor
+    actor,
+  );
+  // Clean OBSERVING slate: counters 0, lastImpliedRank CLEARED (omitted), no pending. The agent
+  // must re-earn every band through the gated ladder.
+  const next = mkState('OBSERVING', 0, 0, undefined, 0, undefined);
+  return { transitions: [transition], state: next, effectiveMode: 'OBSERVING' };
 }
 
 /** Fold a sequence of recomputes through the engine (pure convenience for tests/consumers). */
