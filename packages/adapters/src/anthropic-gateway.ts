@@ -43,9 +43,53 @@ export const ANTHROPIC_PRICES: Readonly<Record<string, ModelPrice>> = {
 };
 
 /**
+ * A trailing version suffix the table aliases omit: a dated snapshot (`-YYYYMMDD`, 6–8 digits) OR
+ * `-latest`. The Anthropic RESPONSE body returns the resolved model — usually a dated snapshot
+ * (`claude-sonnet-4-6-20251114`), not the bare alias — so a price lookup must tolerate it.
+ */
+const MODEL_VERSION_SUFFIX = /-(?:\d{6,8}|latest)$/;
+
+/** Family root → price: every table alias reduced to its root (date/`-latest` stripped). Built
+ *  once so a dated snapshot resolves to the same price as its alias. */
+const ANTHROPIC_PRICE_ROOTS: ReadonlyMap<string, ModelPrice> = new Map(
+  Object.entries(ANTHROPIC_PRICES).map(([key, price]) => [key.replace(MODEL_VERSION_SUFFIX, ''), price]),
+);
+
+/**
+ * Resolve a runtime model string to a price, tolerant of the dated snapshots the Anthropic response
+ * returns vs the bare/`-latest` table aliases. Three layers, most-specific first:
+ *   1. exact table key (a bare alias used verbatim);
+ *   2. strip a trailing date/`-latest` and match the family root (the common snapshot case);
+ *   3. longest segment-boundary prefix among roots (an extra qualifier after the family, e.g.
+ *      `claude-sonnet-4-6-v2-…`). The boundary check (`-` after the root) means `claude-opus-4-1`
+ *      never matches `claude-opus-4-8`.
+ * Returns undefined ONLY when no family matches — a genuine unknown → honest null upstream.
+ */
+function resolvePrice(model: string): ModelPrice | undefined {
+  const exact = ANTHROPIC_PRICES[model];
+  if (exact !== undefined) return exact;
+
+  const root = model.replace(MODEL_VERSION_SUFFIX, '');
+  const byRoot = ANTHROPIC_PRICE_ROOTS.get(root);
+  if (byRoot !== undefined) return byRoot;
+
+  let best: ModelPrice | undefined;
+  let bestLen = 0;
+  for (const [r, price] of ANTHROPIC_PRICE_ROOTS) {
+    if (root.length > r.length && root.startsWith(r) && root[r.length] === '-' && r.length > bestLen) {
+      best = price;
+      bestLen = r.length;
+    }
+  }
+  return best;
+}
+
+/**
  * Real USD for a call: input×in_rate + output×out_rate (rates are per-million). Returns null when
  * the model is unknown (never guessed) or when NO token signal exists. A model whose price exists
  * but with one token count missing treats the missing side as 0 (partial signal is still honest).
+ * The model is resolved snapshot-tolerantly (see `resolvePrice`) so a dated snapshot prices the
+ * same as its alias.
  */
 export function priceUsd(
   model: string | null,
@@ -53,8 +97,8 @@ export function priceUsd(
   outputTokens: number | null,
 ): number | null {
   if (model === null) return null;
-  const p = ANTHROPIC_PRICES[model];
-  if (p === undefined) return null; // unknown model → honest null, never a guess
+  const p = resolvePrice(model);
+  if (p === undefined) return null; // unknown family → honest null, never a guess
   if (inputTokens === null && outputTokens === null) return null;
   const inT = inputTokens ?? 0;
   const outT = outputTokens ?? 0;
