@@ -130,7 +130,7 @@ export function GuardrailsClient({ role }: { role: Role }) {
             <input
               className="gw-input"
               aria-label="guardrail id"
-              placeholder="guardrail id (audit label, e.g. complaint_auto_resolve)"
+              placeholder="guardrail id (audit label, e.g. sensitive_request_block)"
               value={form.guardrailId}
               onChange={(e) => set({ guardrailId: e.target.value })}
               data-rule-guardrailid

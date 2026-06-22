@@ -20,9 +20,9 @@ export const ANTHROPIC_MESSAGES_PATH = '/v1/messages';
  * against current Anthropic pricing and bumps `ANTHROPIC_PRICES_AS_OF`. An unknown model yields a
  * null cost (honest), NEVER a guess.
  *
- * asOf: 2026-06-19 — VERIFY against https://www.anthropic.com/pricing before relying on USD.
+ * asOf: 2026-06-21 — VERIFY against https://www.anthropic.com/pricing before relying on USD.
  */
-export const ANTHROPIC_PRICES_AS_OF = '2026-06-19';
+export const ANTHROPIC_PRICES_AS_OF = '2026-06-21';
 
 export interface ModelPrice {
   readonly inputPerMTok: number;
@@ -31,7 +31,7 @@ export interface ModelPrice {
 
 export const ANTHROPIC_PRICES: Readonly<Record<string, ModelPrice>> = {
   // Claude 4.x family
-  'claude-opus-4-8': { inputPerMTok: 15, outputPerMTok: 75 },
+  'claude-opus-4-8': { inputPerMTok: 5, outputPerMTok: 25 },
   'claude-opus-4-1': { inputPerMTok: 15, outputPerMTok: 75 },
   'claude-sonnet-4-6': { inputPerMTok: 3, outputPerMTok: 15 },
   'claude-sonnet-4-5': { inputPerMTok: 3, outputPerMTok: 15 },

@@ -50,7 +50,8 @@ export interface VerdictMix {
   OVERRIDDEN: number;
   ESCALATED: number;
   FAILED: number;
-  PENDING: number;
+  PENDING: number; // a decision genuinely awaiting a verdict
+  OBSERVED: number; // gateway/observe-only: no verdict, none expected (distinct from PENDING)
 }
 
 export interface ScoreComponents {

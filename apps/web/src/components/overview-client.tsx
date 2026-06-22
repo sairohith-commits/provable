@@ -24,7 +24,7 @@ import {
   queueEmptyCopy,
   toggleFilter,
 } from '@/lib/fleet-view';
-import { relativeTime, shortSubject } from '@/lib/format';
+import { formatUsd, relativeTime, shortSubject } from '@/lib/format';
 import { incidentSource, incidentSourceLabel } from '@/lib/guardrails-view';
 import { EmptyState } from './empty-state';
 import { FleetRow } from './fleet-row';
@@ -43,9 +43,9 @@ const SECTION_TITLE: Record<SectionKey, string> = {
   registry: 'Identity & Registry',
 };
 
-function usd(n: number): string {
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-}
+// All agent-cost USD goes through the ONE shared formatter (lib/format.ts), which keeps
+// sub-dollar real spend non-zero instead of rounding to a bare "$0".
+const usd = formatUsd;
 
 // ── KPI summary row (REAL counts or honest empty; NO compliance/score card) ───────
 function KpiCard({
@@ -133,11 +133,19 @@ function KpiRow({
         onClick={() => onToggle('attention')}
         selected={filter === 'attention'}
       />
-      <KpiCard label="Governed" value={String(kpis.tasksGoverned)} sub={`${s.agentsTotal} agents`} />
+      {/* "Tracked", not "Governed": kpis.tasksGoverned counts ALL task views (incl. observe-only
+          gateway agents), so a governance label would over-claim. Stage-neutral, consistent with
+          the Observe → Score → Govern framing on /connect. */}
+      <KpiCard
+        label="Tracked"
+        value={String(kpis.tasksGoverned)}
+        sub={`${s.agentsTotal} agents`}
+        title="All agent×task pairs reporting (observe-only included) — not a governance count"
+      />
       <KpiCard
         label="Token spend"
         value={s.hasCostSignal ? s.tokenSpend.toLocaleString() : '—'}
-        sub={s.hasCostSignal ? usd(s.usdSpend) : 'no cost signal yet'}
+        sub={s.hasCostSignal ? (s.usdSpend > 0 ? usd(s.usdSpend) : 'USD N/A — unknown model') : 'no cost signal yet'}
       />
       <KpiCard
         label="ROI projection"
@@ -333,7 +341,7 @@ export function GovernanceSection({ transitions }: { transitions: TransitionView
 
 // ── Visibility & Intelligence ────────────────────────────────────────────────
 function MixBar({ mix }: { mix: VerdictMix }) {
-  const total = mix.ACCEPTED + mix.OVERRIDDEN + mix.ESCALATED + mix.FAILED + mix.PENDING;
+  const total = mix.ACCEPTED + mix.OVERRIDDEN + mix.ESCALATED + mix.FAILED + mix.PENDING + mix.OBSERVED;
   if (total === 0) return <span className="mix-empty">no decisions in window</span>;
   const seg = (n: number, cls: string, label: string) =>
     n > 0 ? (
@@ -346,6 +354,7 @@ function MixBar({ mix }: { mix: VerdictMix }) {
       {seg(mix.ESCALATED, 'mix-escalated', 'Escalated')}
       {seg(mix.FAILED, 'mix-failed', 'Failed')}
       {seg(mix.PENDING, 'mix-pending', 'Pending')}
+      {seg(mix.OBSERVED, 'mix-observed', 'Observed')}
     </span>
   );
 }
@@ -376,6 +385,9 @@ const MIX_LEGEND: { cls: string; label: string }[] = [
   { cls: 'mix-escalated', label: 'Escalated' },
   { cls: 'mix-failed', label: 'Failed' },
   { cls: 'mix-pending', label: 'Pending' },
+  // Observed = gateway/observe-only decisions with no verdict expected — distinct from Pending,
+  // which is a decision genuinely awaiting a verdict.
+  { cls: 'mix-observed', label: 'Observed' },
 ];
 
 export function VisibilitySection({ rows }: { rows: VisibilityRow[] }) {
@@ -444,7 +456,11 @@ export function CostSection({ cost }: { cost: CostView }) {
             <span className="cost-lbl">decisions</span>
           </div>
           <div className="cost-metric">
-            <span className="cost-num">{usd(org.usd)}</span>
+            {/* Honest null: hasCostSignal can be true on tokens alone (unknown model → no USD).
+                Show "N/A" rather than a misleading "$0.00" when no decision was priced. */}
+            <span className="cost-num" title={org.usd > 0 ? undefined : 'USD unavailable — unknown model (tokens still tracked)'}>
+              {org.usd > 0 ? usd(org.usd) : 'N/A'}
+            </span>
             <span className="cost-lbl">real agent cost</span>
           </div>
           <div className="cost-metric">

@@ -148,8 +148,8 @@ export function ConnectClient({
           <code>{quickstart(apiUrl, snippetKey)}</code>
         </pre>
         <p className="disclosure">
-          Python SDK over HTTP — the same machine contract the dashboard reads.{' '}
-          <span className="soon">zero-code gateway onboarding — coming soon</span>
+          Python SDK over HTTP — the same machine contract the dashboard reads. Prefer{' '}
+          <strong>zero code</strong>? The Anthropic gateway below needs no SDK changes.
         </p>
       </section>
 
