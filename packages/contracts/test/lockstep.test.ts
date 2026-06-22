@@ -78,6 +78,8 @@ describe('as-const arrays stay in lockstep with their derived unions', () => {
       'SIGNAL_LOSS',
       'MANUAL_OVERRIDE',
       'SCHEDULED',
+      'SUSPEND',
+      'RESUME',
     ]);
     expect([...TRANSITION_STATUSES]).toEqual([
       'PROPOSED',

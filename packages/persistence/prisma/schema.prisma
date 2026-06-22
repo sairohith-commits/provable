@@ -71,6 +71,8 @@ enum TransitionTrigger {
   SIGNAL_LOSS
   MANUAL_OVERRIDE
   SCHEDULED
+  SUSPEND // manual kill-switch: an authorized human (suspend_agent) parks the agent×task
+  RESUME // manual recovery: route-driven only; returns to OBSERVING to re-earn the ladder
 }
 
 enum TransitionStatus {
@@ -221,6 +223,11 @@ model Agent {
   agentKey      String // immutable SDK identity
   displayName   String? // human-friendly label (rename target; agentKey never changes)
   identityState AgentIdentityState @default(DISCOVERED) // AUTHORITATIVE (Phase C1): admin actions + first-activity write this
+  // Agent-wide kill-switch marker (Phase 1). Durable record that an agent-level suspend is in
+  // effect; per-task SUSPENDED transitions are still emitted by the fan-out. ADVISORY only —
+  // nothing reads this to gate yet (enforcement is Phase 2). Both NULL ⇒ not agent-suspended.
+  suspendedAt   DateTime? // when the agent-wide suspend was issued
+  suspendedBy   String? // the human (actor) who issued it
   createdAt     DateTime           @default(now())
 
   org       Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)

@@ -67,6 +67,8 @@ class TransitionTrigger(StrEnum):
     SIGNAL_LOSS = "SIGNAL_LOSS"
     MANUAL_OVERRIDE = "MANUAL_OVERRIDE"
     SCHEDULED = "SCHEDULED"
+    SUSPEND = "SUSPEND"
+    RESUME = "RESUME"
 
 
 class TransitionStatus(StrEnum):

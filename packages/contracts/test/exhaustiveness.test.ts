@@ -101,6 +101,10 @@ function describeTrigger(t: TransitionTrigger): string {
       return 'manual_override';
     case 'SCHEDULED':
       return 'scheduled';
+    case 'SUSPEND':
+      return 'suspend';
+    case 'RESUME':
+      return 'resume';
     default:
       return assertNever(t);
   }

@@ -38,6 +38,8 @@ export const TRANSITION_TRIGGERS = [
   'SIGNAL_LOSS',
   'MANUAL_OVERRIDE',
   'SCHEDULED',
+  'SUSPEND', // manual kill-switch park (suspend_agent); APPLIED, actor-stamped. Distinct from MANUAL_OVERRIDE.
+  'RESUME', // manual recovery to OBSERVING (route-driven only; the auto-engine never self-resumes).
 ] as const;
 export type TransitionTrigger = (typeof TRANSITION_TRIGGERS)[number];
 
