@@ -34,3 +34,22 @@ export function displaySubject(id: string | undefined, names: ReadonlyMap<string
   if (id === undefined) return undefined;
   return names.get(id) ?? shortSubject(id);
 }
+
+/**
+ * The ONE shared USD formatter for agent cost across Overview + Cost & ROI. Real token spend is
+ * usually sub-dollar, so `maximumFractionDigits: 2` would round a genuine $0.0035 down to "$0.00"
+ * (a bare, misleading $0). Honest precision instead:
+ *   - null            → "—" (genuinely unknown; never "$0")
+ *   - 0 < |n| < $1    → cents, widened to 4 decimals below a cent so tiny-but-real spend shows
+ *   - |n| ≥ $1        → thousands-separated, 2 decimals
+ * A genuine zero ($0.00) is only reachable for whole-dollar inputs (e.g. ROI hourly rate); callers
+ * that must distinguish "unknown USD" from "zero spend" pass null for the unknown case.
+ */
+export function formatUsd(n: number | null): string {
+  if (n === null) return '—';
+  const abs = Math.abs(n);
+  if (abs === 0) return '$0.00';
+  if (abs < 0.01) return `$${n.toFixed(4)}`; // sub-cent: never collapse to $0
+  if (abs < 1) return `$${n.toFixed(2)}`; // sub-dollar: cents
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}

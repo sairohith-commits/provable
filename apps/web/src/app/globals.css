@@ -339,6 +339,16 @@ main {
 .mix-escalated { background: var(--band-copilot); }
 .mix-failed { background: var(--danger); }
 .mix-pending { background: var(--muted); }
+/* Observed (gateway/observe-only, no verdict expected): a hatched muted band so it reads as a
+   passive state distinct from solid Pending. */
+.mix-observed {
+  background-color: color-mix(in srgb, var(--muted) 35%, white);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 3px,
+    color-mix(in srgb, var(--muted) 55%, white) 3px 6px
+  );
+}
 .mix-empty, .spark-empty { font-size: 0.74rem; color: var(--muted); font-style: italic; }
 .vis-stats { display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); }
 .spark { display: flex; align-items: flex-end; gap: 2px; height: 36px; }
@@ -462,7 +472,22 @@ table.registry td { padding: 8px 10px; border-bottom: 1px solid var(--hairline);
 .mat-arrow { color: var(--muted); }
 .connect .pillar h3 { font-size: 0.9rem; margin: 0 4px 8px; }
 .key-row { display: flex; align-items: center; gap: 14px; padding: 14px 18px; justify-content: space-between; }
-.key-prefix { font-family: var(--font-mono); font-size: 0.9rem; color: var(--ink); }
+.key-prefix { font-family: var(--font-mono); font-size: 0.9rem; color: var(--ink); margin-right: auto; }
+/* KIND vs STATE rendered as distinct chips (never one crammed column). */
+.key-kind, .key-state {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+}
+.kind-gateway { background: color-mix(in srgb, var(--band-shadow) 12%, white); color: var(--band-shadow); }
+.kind-sdk { background: color-mix(in srgb, var(--band-copilot) 12%, white); color: var(--band-copilot); }
+.key-state { color: var(--muted); }
+.state-active { color: var(--band-solo); border-color: color-mix(in srgb, var(--band-solo) 35%, var(--hairline)); }
+.key-binding { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); }
 .connect-error { color: var(--danger); font-size: 0.82rem; margin: 8px 4px 0; }
 .gw-input {
   font-family: var(--font-mono);

@@ -6,6 +6,9 @@ import { useCallback, useState } from 'react';
 interface KeyRow {
   prefix: string;
   label: string | null;
+  kind: 'SDK' | 'GATEWAY';
+  agentKey?: string | null;
+  taskKey?: string | null;
   createdAt: string;
 }
 
@@ -59,11 +62,26 @@ export function AdminKeys({ keys, canManage }: { keys: KeyRow[]; canManage: bool
       ) : null}
       {error !== null && <p className="auth-error">{error}</p>}
 
+      {/* KIND (gateway/sdk) and STATE are separate facets — never crammed into one column.
+          listActive returns only non-revoked keys, so every row here is STATE = active; a
+          revoked/rotated-away key is filtered out by the API and never appears. */}
       <ul className="key-list" data-key-list>
         {keys.map((k) => (
-          <li key={k.prefix} className="key-row glass" data-key={k.prefix}>
+          <li key={k.prefix} className="key-row glass" data-key={k.prefix} data-key-kind={k.kind}>
             <code className="key-prefix">{`pvb_${k.prefix}_••••••••••••`}</code>
-            <span className="key-label">{k.label ?? ''}</span>
+            <span className={`key-kind kind-${k.kind.toLowerCase()}`} data-key-kind-label>
+              {k.kind === 'GATEWAY' ? 'gateway' : 'sdk'}
+            </span>
+            <span className="key-state state-active" data-key-state>
+              active
+            </span>
+            {k.kind === 'GATEWAY' && k.agentKey ? (
+              <span className="key-binding">
+                {k.agentKey}
+                {k.taskKey ? `·${k.taskKey}` : ''}
+              </span>
+            ) : null}
+            {k.label ? <span className="key-label">{k.label}</span> : null}
             {canManage ? (
               <button className="lens" onClick={() => revoke(k.prefix)} disabled={busy}>
                 Revoke

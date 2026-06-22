@@ -302,6 +302,9 @@ export async function agentIdentityAction(
 export interface AdminKeyRow {
   prefix: string;
   label: string | null;
+  kind: 'SDK' | 'GATEWAY'; // distinct from lifecycle state — the API returns this
+  agentKey?: string | null; // gateway keys are bound to an agent×task
+  taskKey?: string | null;
   createdAt: string;
 }
 
